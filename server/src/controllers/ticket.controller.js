@@ -1,5 +1,5 @@
 const prisma = require('../config/db');
-const { calculateSLADueDates, withISTDisplay } = require('../utils/date');
+const { withISTDisplay } = require('../utils/date');
 const slaService = require('../services/sla.service');
 const lifecycleService = require('../services/ticketLifecycle.service');
 

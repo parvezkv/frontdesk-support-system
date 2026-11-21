@@ -43,45 +43,8 @@ function withISTDisplay(obj, dateFields = ['createdAt', 'updatedAt', 'resolvedAt
   return clone;
 }
 
-/**
- * Calculate SLA response and resolution due dates based on priority (UTC)
- */
-function calculateSLADueDates(priority, baseDate = new Date()) {
-  const now = baseDate.getTime();
-  let responseHours = 8;
-  let resolutionHours = 48;
-
-  switch (priority) {
-    case 'URGENT':
-      responseHours = 1;
-      resolutionHours = 4;
-      break;
-    case 'HIGH':
-      responseHours = 4;
-      resolutionHours = 24;
-      break;
-    case 'MEDIUM':
-      responseHours = 8;
-      resolutionHours = 48;
-      break;
-    case 'LOW':
-      responseHours = 24;
-      resolutionHours = 72;
-      break;
-    default:
-      responseHours = 8;
-      resolutionHours = 48;
-  }
-
-  return {
-    responseDueAt: new Date(now + responseHours * 60 * 60 * 1000),
-    resolutionDueAt: new Date(now + resolutionHours * 60 * 60 * 1000),
-  };
-}
-
 module.exports = {
   TIMEZONE,
   formatToIST,
   withISTDisplay,
-  calculateSLADueDates,
 };
