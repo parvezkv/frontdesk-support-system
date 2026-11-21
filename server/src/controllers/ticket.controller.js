@@ -1,6 +1,7 @@
 const prisma = require('../config/db');
 const { calculateSLADueDates, withISTDisplay } = require('../utils/date');
 const slaService = require('../services/sla.service');
+const lifecycleService = require('../services/ticketLifecycle.service');
 
 /**
  * Format a ticket object with IST formatted dates
@@ -926,12 +927,12 @@ async function releaseTicket(req, res, next) {
 }
 
 /**
- * Update ticket status (with resolution validation & SLA pause logic)
+ * Update ticket status (with lifecycle validation, reopening rules, resolution validation & SLA pause logic)
  */
 async function updateStatus(req, res, next) {
   try {
     const { id } = req.params;
-    const { status, resolutionSummary } = req.body;
+    const { status, resolutionSummary, reason } = req.body;
 
     const isNum = !isNaN(parseInt(id)) && /^\d+$/.test(id);
     const where = isNum ? { ticketNumber: parseInt(id) } : { id };
@@ -944,24 +945,33 @@ async function updateStatus(req, res, next) {
       });
     }
 
-    // 🔒 Customer can only close their own ticket
-    if (req.user.role === 'CUSTOMER') {
-      if (ticket.customerId !== req.user.customerId) {
-        return res.status(403).json({
-          success: false,
-          message: 'Forbidden: You cannot modify this ticket.',
+    const now = new Date();
+
+    // Validate transition using lifecycle service (handles RBAC, state machine, reopening window, resolution summary)
+    try {
+      const result = lifecycleService.validateTransition(ticket, status, req.user, {
+        resolutionSummary,
+        reason,
+        now,
+      });
+
+      // Safe idempotent no-op: if the status is already the requested one
+      if (result.isNoop) {
+        return res.status(200).json({
+          success: true,
+          message: `Ticket is already in ${status} status. No change applied.`,
+          ticket: formatTicket(ticket),
         });
       }
-      if (status !== 'CLOSED') {
-        return res.status(403).json({
-          success: false,
-          message: 'Customers are only permitted to close their tickets.',
-        });
-      }
+    } catch (validationErr) {
+      return res.status(validationErr.statusCode || 400).json({
+        success: false,
+        message: validationErr.message,
+      });
     }
 
     const previousStatus = ticket.status;
-    const now = new Date();
+    const isReopening = previousStatus === 'RESOLVED' && status === 'IN_PROGRESS';
 
     const updateData = { status };
 
@@ -975,10 +985,14 @@ async function updateStatus(req, res, next) {
       if (!ticket.resolvedAt) {
         updateData.resolvedAt = now;
       }
+    } else if (isReopening) {
+      // Clear resolvedAt and closedAt when reopening so the ticket is active again
+      updateData.resolvedAt = null;
+      updateData.closedAt = null;
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      // SLA Pause handling (Rules 2, 3, 4, 5)
+      // SLA Pause handling (Rules 3, 4, 5)
       const isEnteringPause = ['WAITING_FOR_CUSTOMER', 'PENDING_CUSTOMER'].includes(status);
       const wasPaused = ['WAITING_FOR_CUSTOMER', 'PENDING_CUSTOMER'].includes(previousStatus);
 
@@ -1038,13 +1052,44 @@ async function updateStatus(req, res, next) {
         });
       }
 
+      // If reopening, record the reopening event preserving previous resolution history
+      if (isReopening) {
+        await tx.ticketEvent.create({
+          data: {
+            ticketId: ticket.id,
+            actorId: req.user.id,
+            eventType: 'TICKET_REOPENED',
+            oldValue: previousStatus,
+            newValue: status,
+            metadata: {
+              previousResolvedAt: ticket.resolvedAt,
+              previousResolutionDueAt: ticket.resolutionDueAt,
+              reason: reason || 'Reopened by authorized agent within 7-day window',
+              daysSinceResolution: ticket.resolvedAt
+                ? Math.round(((now - new Date(ticket.resolvedAt)) / (1000 * 60 * 60 * 24)) * 10) / 10
+                : null,
+            },
+          },
+        });
+
+        // Recalculate SLA deadlines from the reopen time for the current priority
+        const holidays = await tx.holiday.findMany();
+        const { responseDueAt, resolutionDueAt } = slaService.calculateSLADeadlines(ticket.priority, now, holidays);
+
+        // Only update response deadline if first response hasn't been sent yet
+        if (!ticket.firstResponseAt) {
+          updateData.responseDueAt = responseDueAt;
+        }
+        updateData.resolutionDueAt = resolutionDueAt;
+      }
+
       // Update ticket
       const updatedTicket = await tx.ticket.update({
         where: { id: ticket.id },
         data: updateData,
       });
 
-      // Append-only event
+      // Append-only status changed event
       await tx.ticketEvent.create({
         data: {
           ticketId: ticket.id,
@@ -1061,7 +1106,9 @@ async function updateStatus(req, res, next) {
 
     res.status(200).json({
       success: true,
-      message: `Ticket status updated from ${previousStatus} to ${status}.`,
+      message: isReopening
+        ? `Ticket reopened: status changed from ${previousStatus} to ${status}.`
+        : `Ticket status updated from ${previousStatus} to ${status}.`,
       ticket: formatTicket(updated),
     });
   } catch (error) {
@@ -1339,6 +1386,126 @@ async function exportTicket(req, res, next) {
   }
 }
 
+/**
+ * Reopen a resolved ticket (dedicated endpoint with explicit eligibility check)
+ * Business Rule 7: A resolved ticket can be reopened by an authorized agent within 7 calendar days.
+ * Business Rule 8: After the reopening period expires, a new ticket must be created instead.
+ */
+async function reopenTicket(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const isNum = !isNaN(parseInt(id)) && /^\d+$/.test(id);
+    const where = isNum ? { ticketNumber: parseInt(id) } : { id };
+
+    const ticket = await prisma.ticket.findUnique({ where });
+    if (!ticket) {
+      return res.status(404).json({
+        success: false,
+        message: 'Ticket not found.',
+      });
+    }
+
+    // Check eligibility via lifecycle service
+    const eligibility = lifecycleService.checkReopeningEligibility(ticket);
+    if (!eligibility.eligible) {
+      return res.status(400).json({
+        success: false,
+        message: eligibility.reason,
+        daysSinceResolution: eligibility.daysSinceResolution,
+      });
+    }
+
+    const now = new Date();
+    const holidays = await prisma.holiday.findMany();
+    const { responseDueAt, resolutionDueAt } = slaService.calculateSLADeadlines(ticket.priority, now, holidays);
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const updateData = {
+        status: 'IN_PROGRESS',
+        resolvedAt: null,
+        closedAt: null,
+        updatedAt: now,
+        resolutionDueAt,
+      };
+
+      // Only update response deadline if first response hasn't been sent yet
+      if (!ticket.firstResponseAt) {
+        updateData.responseDueAt = responseDueAt;
+      }
+
+      // Record TICKET_REOPENED event preserving old resolution history
+      await tx.ticketEvent.create({
+        data: {
+          ticketId: ticket.id,
+          actorId: req.user.id,
+          eventType: 'TICKET_REOPENED',
+          oldValue: 'RESOLVED',
+          newValue: 'IN_PROGRESS',
+          metadata: {
+            previousResolvedAt: ticket.resolvedAt,
+            previousResolutionDueAt: ticket.resolutionDueAt,
+            reason: reason || 'Reopened by authorized agent within 7-day window',
+            daysSinceResolution: eligibility.daysSinceResolution,
+          },
+        },
+      });
+
+      // Record STATUS_CHANGED event
+      await tx.ticketEvent.create({
+        data: {
+          ticketId: ticket.id,
+          actorId: req.user.id,
+          eventType: 'STATUS_CHANGED',
+          oldValue: 'RESOLVED',
+          newValue: 'IN_PROGRESS',
+        },
+      });
+
+      const updatedTicket = await tx.ticket.update({
+        where: { id: ticket.id },
+        data: updateData,
+      });
+
+      return updatedTicket;
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Ticket reopened successfully. SLA deadlines recalculated.`,
+      ticket: formatTicket(updated),
+      reopeningInfo: {
+        daysSinceResolution: eligibility.daysSinceResolution,
+        windowDays: lifecycleService.REOPENING_WINDOW_DAYS,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Run automatic closure job (admin-triggered or scheduled)
+ * Closes tickets that have been in WAITING_FOR_CUSTOMER for >= 5 working days without a customer reply.
+ */
+async function runAutoClosure(req, res, next) {
+  try {
+    const dryRun = req.query.dryRun === 'true';
+    const result = await lifecycleService.processAutoClosure({ dryRun });
+
+    res.status(200).json({
+      success: true,
+      message: dryRun
+        ? `Dry run complete. ${result.closedCount} ticket(s) would be auto-closed.`
+        : `Auto-closure job complete. ${result.closedCount} ticket(s) closed.`,
+      ...result,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   createTicket,
   listTickets,
@@ -1352,4 +1519,6 @@ module.exports = {
   updateStatus,
   updatePriority,
   getTicketSLA,
+  reopenTicket,
+  runAutoClosure,
 };

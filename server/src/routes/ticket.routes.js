@@ -50,6 +50,9 @@ router.post('/:id/release', authorize('ADMIN', 'AGENT'), ticketController.releas
 router.route('/:id/status')
   .patch(validateUpdateStatus, ticketController.updateStatus);
 
+// 6b. Reopen a resolved ticket (staff only, with 7-calendar-day window enforcement)
+router.post('/:id/reopen', authorize('ADMIN', 'AGENT'), ticketController.reopenTicket);
+
 // 7. Priority Update (recalculates SLA deadlines and logs event history)
 router.route('/:id/priority')
   .patch(authorize('ADMIN', 'AGENT'), validateUpdatePriority, ticketController.updatePriority);
@@ -57,5 +60,8 @@ router.route('/:id/priority')
 // 8. SLA Inspection & Metrics
 router.route('/:id/sla')
   .get(ticketController.getTicketSLA);
+
+// 9. Admin: Trigger auto-closure job manually
+router.post('/admin/auto-close', authorize('ADMIN'), ticketController.runAutoClosure);
 
 module.exports = router;

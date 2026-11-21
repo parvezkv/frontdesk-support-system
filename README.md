@@ -191,6 +191,41 @@ Frontdesk incorporates a reusable, backend-enforced SLA engine ([`server/src/ser
 
 ---
 
+## 🔄 Ticket Lifecycle & Status Transitions
+
+Frontdesk enforces a strict backend state machine and automated lifecycle engine ([`server/src/services/ticketLifecycle.service.js`](file:///e:/frontdesk/frontdesk-support-system/server/src/services/ticketLifecycle.service.js)):
+
+### Supported Statuses
+- **`OPEN`**: Newly created ticket, awaiting assignment.
+- **`IN_PROGRESS`**: Active ticket claimed and worked on by an agent.
+- **`WAITING_FOR_CUSTOMER`**: Agent requested information; SLA timers paused.
+- **`RESOLVED`**: Issue solved; 7-calendar-day reopening window active.
+- **`CLOSED`**: Terminal state; permanently archived ticket.
+
+### Valid State Transitions
+| From Status | Allowed Target Statuses | Trigger / Conditions |
+| :--- | :--- | :--- |
+| `OPEN` | `IN_PROGRESS`, `CLOSED` | Agent assignment (`/assign`) or direct self-close |
+| `IN_PROGRESS` | `WAITING_FOR_CUSTOMER`, `RESOLVED`, `CLOSED`, `OPEN` | Question asked (pauses SLA), resolved with summary, close, or release |
+| `WAITING_FOR_CUSTOMER` | `IN_PROGRESS`, `RESOLVED`, `CLOSED` | Customer reply (resumes SLA), agent solves, or auto-closed |
+| `RESOLVED` | `IN_PROGRESS`, `CLOSED` | Reopened within 7-day window, or finalized |
+| `CLOSED` | *(None — Terminal)* | Transitions out of `CLOSED` return HTTP 400 |
+
+### Reopening Rules (7-Calendar-Day Window)
+- **Documented Interpretation**: Reopening is permitted within **7 calendar days** of `resolvedAt`.
+- **Authorization**: Restricted to `AGENT` and `ADMIN` roles (`403 Forbidden` for customers).
+- **Post-Expiry Enforcement**: Attempts to reopen after 7 days are rejected with `HTTP 400 Bad Request`. Users must create a new ticket.
+- **History Preservation**: Previous resolution timestamps and status change events are preserved. A `TICKET_REOPENED` event logs the previous `resolvedAt` and reopening reason. SLA resolution deadlines are recalculated from the reopen timestamp.
+
+### Automatic Scheduled Closure Job
+- **Dormancy Threshold**: Tickets waiting in `WAITING_FOR_CUSTOMER` for **5 working days** (2,700 working minutes).
+- **Working Hours Exclusions**: Weekends and configured company holidays are strictly excluded from the dormancy duration.
+- **Customer Reply Defense**: The job verifies no subsequent customer messages exist before closing.
+- **Idempotency**: Running the job repeatedly produces zero redundant closures or duplicate events.
+- **Audit Logging**: Appends a `SYSTEM_AUTO_CLOSED` event (`actorId: null`) documenting elapsed working minutes.
+
+---
+
 ## 🔒 Security & Business Rules
 
 1. **Password Security:**
@@ -234,7 +269,9 @@ Frontdesk incorporates a reusable, backend-enforced SLA engine ([`server/src/ser
 - `POST /api/tickets/:id/reassign` — Reassign ticket to another agent (`ADMIN` or currently assigned agent only)
 - `POST /api/tickets/:id/release` — Release ticket back to unassigned pool (`ADMIN` or currently assigned agent only)
 - `PATCH /api/tickets/:id/priority` — Update priority and recalculate SLA deadlines (`ADMIN`, `AGENT` only)
-- `PATCH /api/tickets/:id/status` — Update ticket status (`OPEN`, `IN_PROGRESS`, `WAITING_FOR_CUSTOMER`, `RESOLVED`, `CLOSED`)
+- `PATCH /api/tickets/:id/status` — Update ticket status (`OPEN`, `IN_PROGRESS`, `WAITING_FOR_CUSTOMER`, `RESOLVED`, `CLOSED`) with lifecycle validation
+- `POST /api/tickets/:id/reopen` — Reopen a resolved ticket within 7-calendar-day window (`ADMIN`, `AGENT` only)
+- `POST /api/tickets/admin/auto-close` — Trigger automated scheduled closure for inactive tickets (`ADMIN` only)
 
 ---
 
@@ -244,8 +281,8 @@ To execute the automated SLA calculation tests and full API verification suite:
 ```bash
 npm test
 ```
-*Runs 108 automated tests: 30 SLA engine unit & edge case tests + 78 full API integration, concurrency & zero-leakage security tests.*
+*Runs 117 automated tests: 30 SLA engine unit & edge case tests + 87 full API integration, concurrency, lifecycle, reopening & auto-close tests.*
 
 To run tests individually:
 - `npm run test:sla --prefix server` — Runs the 30 pure SLA calculation tests.
-- `npm run test:api --prefix server` — Runs the 78 API integration, concurrency, and security tests.
+- `npm run test:api --prefix server` — Runs the 87 API integration, concurrency, lifecycle, and security tests.

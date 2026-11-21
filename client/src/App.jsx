@@ -229,6 +229,20 @@ export default function App() {
     }
   };
 
+  // 7b. Reopen Resolved Ticket (Rule 7: within 7 calendar days)
+  const handleReopenTicket = async () => {
+    const reason = window.prompt('Enter reason for reopening this ticket (within 7-calendar-day window):');
+    if (reason === null) return;
+    try {
+      await api.post(`/tickets/${selectedTicket.id}/reopen`, { reason: reason.trim() });
+      showNotification('Ticket reopened successfully. Status changed to IN_PROGRESS.');
+      await loadTicketDetail(selectedTicket.id);
+      await loadTickets();
+    } catch (err) {
+      showNotification(err.response?.data?.message || 'Failed to reopen ticket', 'error');
+    }
+  };
+
   // 8. Create New Ticket
   const handleCreateTicket = async (e) => {
     e.preventDefault();
@@ -357,7 +371,7 @@ export default function App() {
 
             {/* Filter Pills */}
             <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 text-xs">
-              {['ALL', 'OPEN', 'IN_PROGRESS', 'WAITING_FOR_CUSTOMER', 'RESOLVED'].map((filter) => (
+              {['ALL', 'OPEN', 'IN_PROGRESS', 'WAITING_FOR_CUSTOMER', 'RESOLVED', 'CLOSED'].map((filter) => (
                 <button
                   key={filter}
                   onClick={() => setStatusFilter(filter)}
@@ -491,6 +505,23 @@ export default function App() {
                             Resolve
                           </button>
                         )}
+
+                        {selectedTicket.status === 'RESOLVED' && (
+                          <button
+                            onClick={handleReopenTicket}
+                            className="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-medium px-2.5 py-1.5 rounded-lg transition-colors flex items-center space-x-1"
+                            title="Reopen ticket within 7-calendar-day window"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span>Reopen Ticket</span>
+                          </button>
+                        )}
+
+                        {selectedTicket.status === 'CLOSED' && (
+                          <span className="text-xs bg-slate-100 text-slate-600 border border-slate-300 font-medium px-2.5 py-1.5 rounded-lg">
+                            Closed (Terminal)
+                          </span>
+                        )}
                       </>
                     )}
 
@@ -507,14 +538,24 @@ export default function App() {
 
                 {/* SLA Banner */}
                 <div className={`p-2.5 rounded-lg text-xs flex items-center justify-between border ${
-                  selectedTicket.status === 'WAITING_FOR_CUSTOMER'
+                  selectedTicket.status === 'CLOSED'
+                    ? 'bg-slate-100 border-slate-200 text-slate-600'
+                    : selectedTicket.status === 'RESOLVED'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : selectedTicket.status === 'WAITING_FOR_CUSTOMER'
                     ? 'bg-purple-50 border-purple-200 text-purple-900'
                     : 'bg-slate-50 border-slate-200 text-slate-700'
                 }`}>
                   <div className="flex items-center space-x-2">
                     <Clock className="w-4 h-4 text-slate-500" />
                     <span>
-                      SLA Target: <strong>{selectedTicket.priority}</strong> (Hours: Mon-Fri 09:30 - 18:30 IST)
+                      {selectedTicket.status === 'CLOSED' ? (
+                        <span>Ticket is permanently <strong>CLOSED</strong>. To report follow-up issues, please create a new ticket.</span>
+                      ) : selectedTicket.status === 'RESOLVED' ? (
+                        <span>Ticket is <strong>RESOLVED</strong>. Eligible for reopening within 7 calendar days of resolution.</span>
+                      ) : (
+                        <span>SLA Target: <strong>{selectedTicket.priority}</strong> (Hours: Mon-Fri 09:30 - 18:30 IST)</span>
+                      )}
                     </span>
                     {selectedTicket.status === 'WAITING_FOR_CUSTOMER' && (
                       <span className="font-bold text-purple-700 flex items-center space-x-1 ml-2">

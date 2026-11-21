@@ -391,6 +391,13 @@ async function runTests() {
 
     // 16. Customer Reply Resumes Paused SLA (Rules 2, 3, 4, 5)
     console.log('\n  ⚡ Testing SLA Pause & Resume on Customer Reply (Rules 2, 4)...');
+    // First assign the ticket so it transitions to IN_PROGRESS (required for WAITING_FOR_CUSTOMER)
+    const assignForPauseRes = await request(`/api/tickets/${newTicketId}/assign`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${agent1Token}` },
+    });
+    assert(assignForPauseRes.status === 200, 'Ticket assigned to agent for SLA pause/resume test');
+
     // Set status to WAITING_FOR_CUSTOMER
     const pauseStatusRes = await request(`/api/tickets/${newTicketId}/status`, {
       method: 'PATCH',
@@ -442,6 +449,357 @@ async function runTests() {
     });
     assert(resolveRes.status === 200 && resolveRes.data.ticket.status === 'RESOLVED', 'Ticket status successfully updated to RESOLVED');
     assert(resolveRes.data.ticket.resolvedAt, 'resolvedAt timestamp recorded in UTC');
+
+    // ===================================================================
+    // 18. TICKET LIFECYCLE: State Transition Matrix Validation
+    // ===================================================================
+    console.log('\n  🔄 Testing Ticket Lifecycle & Status Transition Rules...');
+
+    // 18a. CLOSED is terminal: attempting to change status of a CLOSED ticket fails
+    const closedTicket = await prisma.ticket.findFirst({
+      where: { status: 'CLOSED' },
+    });
+    if (closedTicket) {
+      const closedTransition = await request(`/api/tickets/${closedTicket.id}/status`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${agent1Token}` },
+        body: { status: 'IN_PROGRESS' },
+      });
+      assert(closedTransition.status === 400, 'Lifecycle: CLOSED is terminal; cannot transition out of CLOSED');
+    } else {
+      console.log('    ⏭ Skipped CLOSED terminal test (no CLOSED ticket in seed data)');
+    }
+
+    // 18b. Invalid transition: OPEN -> RESOLVED (must go through IN_PROGRESS first)
+    // Create a fresh ticket to test invalid transitions
+    const lifecycleTicketRes = await request('/api/tickets', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${customerToken}` },
+      body: {
+        subject: 'Lifecycle test ticket',
+        description: 'Testing ticket status transition rules.',
+        priority: 'MEDIUM',
+      },
+    });
+    assert(lifecycleTicketRes.status === 201, 'Lifecycle: Fresh ticket created for transition testing');
+    const lifecycleTicketId = lifecycleTicketRes.data.ticket.id;
+    assert(lifecycleTicketRes.data.ticket.status === 'OPEN', 'Lifecycle Rule 1: Newly created ticket starts as OPEN');
+
+    // OPEN -> RESOLVED should fail (not in allowed transitions)
+    const openToResolved = await request(`/api/tickets/${lifecycleTicketId}/status`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${agent1Token}` },
+      body: { status: 'RESOLVED', resolutionSummary: 'Trying to skip the lifecycle.' },
+    });
+    assert(openToResolved.status === 400, 'Lifecycle: OPEN -> RESOLVED rejected (invalid transition)');
+
+    // OPEN -> WAITING_FOR_CUSTOMER should fail
+    const openToWaiting = await request(`/api/tickets/${lifecycleTicketId}/status`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${agent1Token}` },
+      body: { status: 'WAITING_FOR_CUSTOMER' },
+    });
+    assert(openToWaiting.status === 400, 'Lifecycle: OPEN -> WAITING_FOR_CUSTOMER rejected (invalid transition)');
+
+    // 18c. OPEN -> IN_PROGRESS (via assign endpoint, which moves OPEN tickets to IN_PROGRESS)
+    const assignLifecycleRes = await request(`/api/tickets/${lifecycleTicketId}/assign`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${agent1Token}` },
+    });
+    assert(assignLifecycleRes.status === 200 && assignLifecycleRes.data.ticket.status === 'IN_PROGRESS',
+      'Lifecycle Rule 2: Agent takes unassigned ticket, moves to IN_PROGRESS');
+
+    // 18d. IN_PROGRESS -> WAITING_FOR_CUSTOMER (SLA pauses)
+    const toWaitingRes = await request(`/api/tickets/${lifecycleTicketId}/status`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${agent1Token}` },
+      body: { status: 'WAITING_FOR_CUSTOMER' },
+    });
+    assert(toWaitingRes.status === 200 && toWaitingRes.data.ticket.status === 'WAITING_FOR_CUSTOMER',
+      'Lifecycle Rule 3: IN_PROGRESS -> WAITING_FOR_CUSTOMER succeeds');
+
+    const lifecyclePause = await prisma.sLAPause.findFirst({
+      where: { ticketId: lifecycleTicketId, endedAt: null },
+    });
+    assert(lifecyclePause !== null, 'Lifecycle Rule 4: SLA pause created when entering WAITING_FOR_CUSTOMER');
+
+    // 18e. Customer reply resumes SLA (Rules 5)
+    const customerReplyLifecycle = await request(`/api/tickets/${lifecycleTicketId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${customerToken}` },
+      body: { content: 'Here is the info you requested.' },
+    });
+    assert(customerReplyLifecycle.status === 201, 'Lifecycle Rule 5: Customer reply posted successfully');
+
+    const afterReplyTicket = await prisma.ticket.findUnique({ where: { id: lifecycleTicketId } });
+    assert(afterReplyTicket.status === 'IN_PROGRESS',
+      'Lifecycle Rule 5: Customer reply returns ticket to IN_PROGRESS');
+
+    const lifecyclePauseAfter = await prisma.sLAPause.findUnique({ where: { id: lifecyclePause.id } });
+    assert(lifecyclePauseAfter.endedAt !== null, 'Lifecycle Rule 5: SLA pause ended on customer reply');
+
+    // 18f. IN_PROGRESS -> RESOLVED (Rule 6)
+    const resolveLifecycleRes = await request(`/api/tickets/${lifecycleTicketId}/status`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${agent1Token}` },
+      body: { status: 'RESOLVED', resolutionSummary: 'Issue identified and fixed in middleware configuration.' },
+    });
+    assert(resolveLifecycleRes.status === 200 && resolveLifecycleRes.data.ticket.status === 'RESOLVED',
+      'Lifecycle Rule 6: Agent marks ticket RESOLVED with summary');
+    assert(resolveLifecycleRes.data.ticket.resolvedAt, 'Lifecycle Rule 6: resolvedAt timestamp set');
+
+    // 18g. Idempotent repeated request: same status again should be safe no-op
+    const idempotentRes = await request(`/api/tickets/${lifecycleTicketId}/status`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${agent1Token}` },
+      body: { status: 'RESOLVED', resolutionSummary: 'Duplicate request.' },
+    });
+    assert(idempotentRes.status === 200 && idempotentRes.data.message.includes('already'),
+      'Lifecycle: Idempotent repeated status request returns safe no-op');
+
+    // ===================================================================
+    // 19. REOPENING: 7-Calendar-Day Window (Rules 7 & 8)
+    // ===================================================================
+    console.log('\n  🔓 Testing Ticket Reopening Rules (7-day window)...');
+
+    // 19a. Reopen within window (should succeed)
+    const reopenRes = await request(`/api/tickets/${lifecycleTicketId}/reopen`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${agent1Token}` },
+      body: { reason: 'Customer reports issue recurred after the fix.' },
+    });
+    assert(reopenRes.status === 200 && reopenRes.data.ticket.status === 'IN_PROGRESS',
+      'Reopen Rule 7: Resolved ticket reopened within 7-day window');
+    assert(reopenRes.data.ticket.resolvedAt === null,
+      'Reopen: resolvedAt cleared on reopening');
+    assert(reopenRes.data.reopeningInfo && reopenRes.data.reopeningInfo.windowDays === 7,
+      'Reopen: Response includes reopening window info (7 days)');
+
+    // Verify reopening event preserved old resolution
+    const reopenEvents = await prisma.ticketEvent.findMany({
+      where: { ticketId: lifecycleTicketId, eventType: 'TICKET_REOPENED' },
+      orderBy: { createdAt: 'desc' },
+    });
+    assert(reopenEvents.length > 0, 'Reopen: TICKET_REOPENED event recorded in audit history');
+    assert(reopenEvents[0].metadata && reopenEvents[0].metadata.previousResolvedAt,
+      'Reopen: Event preserves previous resolution timestamp in metadata');
+
+    // 19b. Verify old STATUS_CHANGED events still exist (never deleted)
+    const statusHistory = await prisma.ticketEvent.findMany({
+      where: { ticketId: lifecycleTicketId, eventType: 'STATUS_CHANGED' },
+      orderBy: { createdAt: 'asc' },
+    });
+    assert(statusHistory.length >= 3, 'Reopen: Previous status change events preserved (never deleted)');
+
+    // 19c. Reopen after window expires (should fail)
+    // Resolve ticket again, then backdate resolvedAt to 8 days ago
+    const resolveAgain = await request(`/api/tickets/${lifecycleTicketId}/status`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${agent1Token}` },
+      body: { status: 'RESOLVED', resolutionSummary: 'Second resolution after reopen.' },
+    });
+    assert(resolveAgain.status === 200, 'Reopen test: Ticket resolved again');
+
+    // Backdate resolvedAt to 8 days ago to simulate expired window
+    const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    await prisma.ticket.update({
+      where: { id: lifecycleTicketId },
+      data: { resolvedAt: eightDaysAgo },
+    });
+
+    const expiredReopenRes = await request(`/api/tickets/${lifecycleTicketId}/reopen`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${agent1Token}` },
+      body: { reason: 'Trying to reopen after window expired.' },
+    });
+    assert(expiredReopenRes.status === 400, 'Reopen Rule 8: Reopening after 7-day window is rejected');
+    assert(expiredReopenRes.data.message.includes('expired') || expiredReopenRes.data.message.includes('window'),
+      'Reopen Rule 8: Error message mentions expired window');
+
+    // 19d. Customer cannot reopen tickets
+    // Reset resolvedAt back to now so ticket is RESOLVED with fresh window
+    await prisma.ticket.update({
+      where: { id: lifecycleTicketId },
+      data: { resolvedAt: new Date() },
+    });
+    const customerReopenRes = await request(`/api/tickets/${lifecycleTicketId}/reopen`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${customerToken}` },
+      body: { reason: 'Customer tries to reopen.' },
+    });
+    assert(customerReopenRes.status === 403, 'Reopen: Customer cannot reopen tickets (403 Forbidden)');
+
+    // ===================================================================
+    // 20. AUTOMATIC CLOSURE: Scheduled Job for Inactive Tickets (Rule 9)
+    // ===================================================================
+    console.log('\n  🤖 Testing Automatic Closure of Inactive Tickets...');
+
+    // Create a ticket specifically for auto-close testing
+    const autoCloseTicketRes = await request('/api/tickets', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${customerToken}` },
+      body: {
+        subject: 'Auto-close test ticket',
+        description: 'This ticket will be used to test automatic closure.',
+        priority: 'LOW',
+      },
+    });
+    assert(autoCloseTicketRes.status === 201, 'Auto-close: Test ticket created');
+    const autoCloseTicketId = autoCloseTicketRes.data.ticket.id;
+
+    // Assign and move to IN_PROGRESS
+    await request(`/api/tickets/${autoCloseTicketId}/assign`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${agent1Token}` },
+    });
+
+    // Move to WAITING_FOR_CUSTOMER
+    const toWaitingAutoClose = await request(`/api/tickets/${autoCloseTicketId}/status`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${agent1Token}` },
+      body: { status: 'WAITING_FOR_CUSTOMER' },
+    });
+    assert(toWaitingAutoClose.status === 200, 'Auto-close: Ticket set to WAITING_FOR_CUSTOMER');
+
+    // 20a. Dry run: ticket waiting less than 5 working days -> should NOT be closed
+    const lifecycleSvc = require('./src/services/ticketLifecycle.service');
+    const dryRunResult = await lifecycleSvc.processAutoClosure({ dryRun: true });
+    // The ticket was just set to waiting, so it should NOT qualify for auto-closure yet
+    const foundInDryRun = dryRunResult.closedTickets.find(t => t.id === autoCloseTicketId);
+    assert(!foundInDryRun, 'Auto-close: Ticket waiting < 5 working days is NOT auto-closed');
+
+    // 20b. Backdate the SLA pause to simulate 6 working days of inactivity
+    const activePause = await prisma.sLAPause.findFirst({
+      where: { ticketId: autoCloseTicketId, endedAt: null },
+    });
+    if (activePause) {
+      // Set startedAt to 12 calendar days ago (well over 5 working days)
+      const twelveCalendarDaysAgo = new Date(Date.now() - 12 * 24 * 60 * 60 * 1000);
+      await prisma.sLAPause.update({
+        where: { id: activePause.id },
+        data: { startedAt: twelveCalendarDaysAgo },
+      });
+      await prisma.ticket.update({
+        where: { id: autoCloseTicketId },
+        data: { createdAt: twelveCalendarDaysAgo, updatedAt: twelveCalendarDaysAgo },
+      });
+      await prisma.message.updateMany({
+        where: { ticketId: autoCloseTicketId },
+        data: { createdAt: twelveCalendarDaysAgo },
+      });
+    }
+
+    // 20c. Run auto-closure job (non-dry-run)
+    const autoCloseResult = await lifecycleSvc.processAutoClosure();
+    const autoClosedTicket = autoCloseResult.closedTickets.find(t => t.id === autoCloseTicketId);
+    assert(autoClosedTicket !== undefined, 'Auto-close Rule 9: Ticket auto-closed after 5 working days inactivity');
+    assert(autoCloseResult.closedCount >= 1, 'Auto-close: closedCount >= 1');
+
+    // Verify the ticket is now CLOSED in the database
+    const autoClosedCheck = await prisma.ticket.findUnique({ where: { id: autoCloseTicketId } });
+    assert(autoClosedCheck.status === 'CLOSED', 'Auto-close: Ticket status is CLOSED in database');
+    assert(autoClosedCheck.closedAt !== null, 'Auto-close: closedAt timestamp set');
+
+    // Verify SYSTEM_AUTO_CLOSED event recorded
+    const autoCloseEvent = await prisma.ticketEvent.findFirst({
+      where: { ticketId: autoCloseTicketId, eventType: 'SYSTEM_AUTO_CLOSED' },
+    });
+    assert(autoCloseEvent !== null, 'Auto-close: SYSTEM_AUTO_CLOSED event recorded in audit history');
+    assert(autoCloseEvent.actorId === null, 'Auto-close: System event has null actorId (system-initiated)');
+    assert(autoCloseEvent.metadata && autoCloseEvent.metadata.reason,
+      'Auto-close: Event metadata includes closure reason');
+
+    // 20d. Idempotency: Running again should not close any additional tickets
+    const idempotentAutoClose = await lifecycleSvc.processAutoClosure();
+    const foundAgain = idempotentAutoClose.closedTickets.find(t => t.id === autoCloseTicketId);
+    assert(!foundAgain, 'Auto-close idempotency: Already-closed ticket is not processed again');
+
+    // 20e. Ticket with customer reply should NOT be auto-closed
+    const replyProtectedTicketRes = await request('/api/tickets', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${customerToken}` },
+      body: {
+        subject: 'Reply-protected auto-close test',
+        description: 'This ticket should NOT be auto-closed because customer replied.',
+        priority: 'LOW',
+      },
+    });
+    const replyProtectedId = replyProtectedTicketRes.data.ticket.id;
+
+    await request(`/api/tickets/${replyProtectedId}/assign`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${agent1Token}` },
+    });
+    await request(`/api/tickets/${replyProtectedId}/status`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${agent1Token}` },
+      body: { status: 'WAITING_FOR_CUSTOMER' },
+    });
+
+    // Backdate the pause
+    const replyPause = await prisma.sLAPause.findFirst({
+      where: { ticketId: replyProtectedId, endedAt: null },
+    });
+    if (replyPause) {
+      const longAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
+      await prisma.sLAPause.update({
+        where: { id: replyPause.id },
+        data: { startedAt: longAgo },
+      });
+      await prisma.ticket.update({
+        where: { id: replyProtectedId },
+        data: { updatedAt: longAgo },
+      });
+    }
+
+    // Now post a customer reply AFTER the pause was started
+    // First need to resume so we can post as customer; but we directly
+    // insert a message with a recent createdAt to simulate the defense check
+    await prisma.message.create({
+      data: {
+        ticketId: replyProtectedId,
+        senderId: customerLogin.data.user.id,
+        content: 'Customer replied after long wait.',
+        createdAt: new Date(), // Recent reply
+      },
+    });
+
+    const replyProtectedResult = await lifecycleSvc.processAutoClosure();
+    const shouldNotClose = replyProtectedResult.closedTickets.find(t => t.id === replyProtectedId);
+    assert(!shouldNotClose, 'Auto-close defense: Ticket with customer reply is NOT auto-closed');
+
+    // ===================================================================
+    // 21. TRANSITION MATRIX: Additional Edge Cases
+    // ===================================================================
+    console.log('\n  🧩 Testing Additional Transition Edge Cases...');
+
+    // 21a. Customers can only close their own tickets
+    const customerStatusRes = await request(`/api/tickets/${newTicketId}/status`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${customerToken}` },
+      body: { status: 'IN_PROGRESS' },
+    });
+    assert(customerStatusRes.status === 403, 'Lifecycle RBAC: Customer cannot set status to IN_PROGRESS');
+
+    // 21b. OPEN -> CLOSED is allowed (closing without assignment)
+    const closeWithoutAssignTicketRes = await request('/api/tickets', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${customerToken}` },
+      body: {
+        subject: 'Direct close test',
+        description: 'Customer closes this ticket without it being assigned.',
+        priority: 'LOW',
+      },
+    });
+    const directCloseId = closeWithoutAssignTicketRes.data.ticket.id;
+
+    const directCloseRes = await request(`/api/tickets/${directCloseId}/status`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${customerToken}` },
+      body: { status: 'CLOSED', resolutionSummary: 'Resolved on my own, closing ticket.' },
+    });
+    assert(directCloseRes.status === 200 && directCloseRes.data.ticket.status === 'CLOSED',
+      'Lifecycle: OPEN -> CLOSED allowed (customer self-closes)');
 
     console.log(`\n========================================`);
     console.log(`Test Results: ${passed} Passed, ${failed} Failed`);

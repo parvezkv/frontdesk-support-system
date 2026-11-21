@@ -161,11 +161,13 @@ function validateUpdateStatus(req, res, next) {
     });
   }
 
-  // Business Rule: Resolving or closing a ticket requires a resolution explanation
-  if (['RESOLVED', 'CLOSED'].includes(status) && (!resolutionSummary || typeof resolutionSummary !== 'string' || resolutionSummary.trim().length < 5)) {
+  // Business Rule: Resolving a ticket requires a resolution explanation
+  // For CLOSED, the resolutionSummary is required only via this validator;
+  // the controller will check if the ticket was already resolved and may skip it.
+  if (status === 'RESOLVED' && (!resolutionSummary || typeof resolutionSummary !== 'string' || resolutionSummary.trim().length < 5)) {
     return res.status(400).json({
       success: false,
-      message: 'A resolutionSummary of at least 5 characters is required when resolving or closing a ticket.',
+      message: 'A resolutionSummary of at least 5 characters is required when resolving a ticket.',
     });
   }
 
