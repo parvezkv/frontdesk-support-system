@@ -459,12 +459,14 @@ async function addMessage(req, res, next) {
       });
 
       // 3. Append-only event
+      const isCustomer = req.user.role === 'CUSTOMER';
       await tx.ticketEvent.create({
         data: {
           ticketId: ticket.id,
           actorId: req.user.id,
-          eventType: 'MESSAGE_SENT',
-          newValue: `${req.user.role} sent a message`,
+          eventType: isCustomer ? 'CUSTOMER_REPLY' : 'AGENT_REPLY',
+          newValue: `${req.user.role} sent message: ${content.substring(0, 80)}${content.length > 80 ? '...' : ''}`,
+          metadata: { messageId: message.id, senderRole: req.user.role },
         },
       });
 
@@ -1089,6 +1091,23 @@ async function updateStatus(req, res, next) {
         data: updateData,
       });
 
+      // Record dedicated TICKET_RESOLVED event
+      if (status === 'RESOLVED') {
+        await tx.ticketEvent.create({
+          data: {
+            ticketId: ticket.id,
+            actorId: req.user.id,
+            eventType: 'TICKET_RESOLVED',
+            oldValue: previousStatus,
+            newValue: 'RESOLVED',
+            metadata: {
+              resolutionSummary: resolutionSummary || null,
+              resolvedAt: now,
+            },
+          },
+        });
+      }
+
       // Append-only status changed event
       await tx.ticketEvent.create({
         data: {
@@ -1506,6 +1525,62 @@ async function runAutoClosure(req, res, next) {
   }
 }
 
+/**
+ * Retrieve chronological audit history for a ticket
+ * Business Rule Requirements 8 & 9:
+ * - Display ticket history chronologically (createdAt ascending)
+ * - Display actor, action (eventType), and server-generated timestamp
+ */
+async function getTicketEvents(req, res, next) {
+  try {
+    const { id } = req.params;
+    const isNum = !isNaN(parseInt(id)) && /^\d+$/.test(id);
+    const where = isNum ? { ticketNumber: parseInt(id) } : { id };
+
+    const ticket = await prisma.ticket.findUnique({
+      where,
+      select: { id: true, ticketNumber: true, subject: true, customerId: true },
+    });
+
+    if (!ticket) {
+      return res.status(404).json({
+        success: false,
+        message: 'Ticket not found.',
+      });
+    }
+
+    // 🔒 Customer can only view events for their own ticket
+    if (req.user.role === 'CUSTOMER' && ticket.customerId !== req.user.customerId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: You do not have permission to view events for this ticket.',
+      });
+    }
+
+    const events = await prisma.ticketEvent.findMany({
+      where: { ticketId: ticket.id },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        actor: {
+          select: { id: true, name: true, email: true, role: true },
+        },
+      },
+    });
+
+    const formattedEvents = events.map((e) => withISTDisplay(e));
+
+    res.status(200).json({
+      success: true,
+      ticketId: ticket.id,
+      ticketNumber: ticket.ticketNumber,
+      totalEvents: formattedEvents.length,
+      events: formattedEvents,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   createTicket,
   listTickets,
@@ -1521,4 +1596,5 @@ module.exports = {
   getTicketSLA,
   reopenTicket,
   runAutoClosure,
+  getTicketEvents,
 };

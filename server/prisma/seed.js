@@ -6,6 +6,9 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Starting comprehensive database seeding...');
 
+  // Allow administrative reset of immutable audit events for seeding
+  await prisma.$executeRawUnsafe("SET frontdesk.allow_audit_reset = 'true';");
+
   // Clear existing records in correct order to respect foreign key constraints
   await prisma.sLAPause.deleteMany();
   await prisma.ticketEvent.deleteMany();
@@ -31,7 +34,16 @@ async function main() {
   });
   console.log('✅ Seeded 5 official holidays');
 
-  // 2. Seed Users (Admin, Agents, Customers)
+  // 2. Seed Users (System Automation, Admin, Agents, Customers)
+  const systemUser = await prisma.user.create({
+    data: {
+      name: 'System Automation',
+      email: 'system@frontdesk.local',
+      passwordHash,
+      role: 'ADMIN',
+    },
+  });
+
   const admin = await prisma.user.create({
     data: {
       name: 'System Administrator',

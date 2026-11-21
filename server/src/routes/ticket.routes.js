@@ -61,6 +61,10 @@ router.route('/:id/priority')
 router.route('/:id/sla')
   .get(ticketController.getTicketSLA);
 
+// 8b. Chronological Audit History (Actor, Action, Timestamp)
+router.get('/:id/events', ticketController.getTicketEvents);
+router.get('/:id/history', ticketController.getTicketEvents);
+
 // 9. Admin: Trigger auto-closure job manually
 router.post('/admin/auto-close', authorize('ADMIN'), ticketController.runAutoClosure);
 

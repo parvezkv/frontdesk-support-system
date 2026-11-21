@@ -222,7 +222,7 @@ Frontdesk enforces a strict backend state machine and automated lifecycle engine
 - **Working Hours Exclusions**: Weekends and configured company holidays are strictly excluded from the dormancy duration.
 - **Customer Reply Defense**: The job verifies no subsequent customer messages exist before closing.
 - **Idempotency**: Running the job repeatedly produces zero redundant closures or duplicate events.
-- **Audit Logging**: Appends a `SYSTEM_AUTO_CLOSED` event (`actorId: null`) documenting elapsed working minutes.
+- **Audit Logging**: Appends a `SYSTEM_AUTO_CLOSED` event with an explicit system actor (`System Automation`, `system@frontdesk.local`) documenting elapsed working minutes.
 
 ---
 
@@ -243,8 +243,11 @@ Frontdesk enforces a strict backend state machine and automated lifecycle engine
    - **Database-Level Constraint:** A partial unique index (`CREATE UNIQUE INDEX unique_active_ticket_assignment ON ticket_assignments ("ticketId") WHERE "releasedAt" IS NULL;`) physically prevents duplicate active assignments.
    - **Authorization Guards:** Only the currently assigned agent or an `ADMIN` can release or reassign tickets (`403 Forbidden` for unauthorized attempts).
    - **History Preservation:** Whenever a ticket is reassigned or released, previous assignments have `releasedAt` timestamped in UTC.
-5. **Append-Only Ticket Events:**
-   - Ticket events are strictly append-only (`AGENT_ASSIGNED`, `AGENT_REASSIGNED`, `AGENT_RELEASED`, `PRIORITY_CHANGED`, `SLA_PAUSED`, `SLA_RESUMED`). No PUT, PATCH, or DELETE endpoints exist for ticket events.
+5. **Reliable Append-Only Audit History (Database Trigger Protected):**
+   - **Comprehensive Coverage:** Events are transactionally recorded for `TICKET_CREATED`, `AGENT_ASSIGNED`, `AGENT_REASSIGNED`, `AGENT_RELEASED`, `PRIORITY_CHANGED`, `STATUS_CHANGED`, `CUSTOMER_REPLY`, `INTERNAL_NOTE_ADDED`, `SLA_PAUSED`, `SLA_RESUMED`, `TICKET_RESOLVED`, `TICKET_REOPENED`, and `SYSTEM_AUTO_CLOSED`.
+   - **Authoritative Provenance:** Every event records what happened (`eventType`, `oldValue`, `newValue`), when it happened (server-generated UTC `createdAt`), and who performed it (`actorId` from authenticated session, or explicit `System Automation` actor).
+   - **Database-Level Immutability Trigger:** A PostgreSQL BEFORE trigger (`trg_prevent_ticket_events_modification`) strictly rejects `UPDATE` and `DELETE` queries with exception code `P0001`. Audit records can never be mutated or erased.
+   - **Zero Modification Endpoints:** The API provides strictly read-only access (`GET /api/tickets/:id/events`); no update or delete routes exist.
 6. **Ticket Resolution Validation:**
    - Changing status to `RESOLVED` or `CLOSED` requires a mandatory `resolutionSummary`.
 
@@ -262,6 +265,7 @@ Frontdesk enforces a strict backend state machine and automated lifecycle engine
 - `POST /api/tickets` — Create ticket (calculates business-hours SLA due dates and appends event)
 - `GET /api/tickets/:id` — Get ticket details (Customer view hides internal notes; Staff view includes all tabs)
 - `GET /api/tickets/:id/sla` — Inspect SLA calculation breakdown, working hours config, pause metrics, and remaining minutes
+- `GET /api/tickets/:id/events` — Retrieve chronological audit history with actor, action, previous/new values, and timestamps
 - `GET /api/tickets/:id/export` — Export ticket history (securely strips internal notes for customers, includes for staff)
 - `POST /api/tickets/:id/messages` — Post public message (customer reply automatically resumes paused SLA clock)
 - `POST /api/tickets/:id/internal-notes` — Post staff-only internal note (`ADMIN`, `AGENT` only)
@@ -281,8 +285,8 @@ To execute the automated SLA calculation tests and full API verification suite:
 ```bash
 npm test
 ```
-*Runs 117 automated tests: 30 SLA engine unit & edge case tests + 87 full API integration, concurrency, lifecycle, reopening & auto-close tests.*
+*Runs 137 automated tests: 30 SLA engine unit & edge case tests + 107 full API integration, concurrency, lifecycle, reopening, system auto-close, and database trigger immutability tests.*
 
 To run tests individually:
 - `npm run test:sla --prefix server` — Runs the 30 pure SLA calculation tests.
-- `npm run test:api --prefix server` — Runs the 87 API integration, concurrency, lifecycle, and security tests.
+- `npm run test:api --prefix server` — Runs the 107 API integration, concurrency, lifecycle, and audit immutability tests.

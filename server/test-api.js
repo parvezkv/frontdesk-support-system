@@ -705,7 +705,9 @@ async function runTests() {
       where: { ticketId: autoCloseTicketId, eventType: 'SYSTEM_AUTO_CLOSED' },
     });
     assert(autoCloseEvent !== null, 'Auto-close: SYSTEM_AUTO_CLOSED event recorded in audit history');
-    assert(autoCloseEvent.actorId === null, 'Auto-close: System event has null actorId (system-initiated)');
+    assert(autoCloseEvent.actorId !== null, 'Requirement 10: Automatic system event records explicit system actor ID');
+    const systemActor = await prisma.user.findUnique({ where: { id: autoCloseEvent.actorId } });
+    assert(systemActor && systemActor.name === 'System Automation', 'System event actor is explicitly "System Automation"');
     assert(autoCloseEvent.metadata && autoCloseEvent.metadata.reason,
       'Auto-close: Event metadata includes closure reason');
 
@@ -800,6 +802,120 @@ async function runTests() {
     });
     assert(directCloseRes.status === 200 && directCloseRes.data.ticket.status === 'CLOSED',
       'Lifecycle: OPEN -> CLOSED allowed (customer self-closes)');
+
+    // ===================================================================
+    // 22. AUDIT HISTORY & IMMUTABILITY VERIFICATION (Trigger Protection)
+    // ===================================================================
+    console.log('\n  📜 Testing Append-Only Audit History & Database-Level Immutability...');
+
+    // A. Create a fresh ticket specifically to verify the complete event lifecycle
+    const auditTicketRes = await request('/api/tickets', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${customerToken}` },
+      body: {
+        subject: 'Audit trail verification ticket',
+        description: 'Comprehensive audit history tracking test.',
+        priority: 'MEDIUM',
+      },
+    });
+    assert(auditTicketRes.status === 201, 'Audit test: Ticket created');
+    const auditTicketId = auditTicketRes.data.ticket.id;
+
+    // B. Change priority
+    const auditPriorityRes = await request(`/api/tickets/${auditTicketId}/priority`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${agent1Token}` },
+      body: { priority: 'URGENT' },
+    });
+    assert(auditPriorityRes.status === 200, 'Audit test: Priority updated to URGENT');
+
+    // C. Assign to an agent
+    const auditAssignRes = await request(`/api/tickets/${auditTicketId}/assign`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${agent1Token}` },
+      body: { agentId: agent1Login.data.user.id },
+    });
+    assert(auditAssignRes.status === 200, 'Audit test: Ticket assigned to Agent Sarah');
+
+    // D. Send a customer reply
+    const auditReplyRes = await request(`/api/tickets/${auditTicketId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${customerToken}` },
+      body: { content: 'Customer replying to the inquiry with system logs.' },
+    });
+    assert(auditReplyRes.status === 201, 'Audit test: Customer reply posted');
+
+    // E. Resolve ticket
+    const auditResolveRes = await request(`/api/tickets/${auditTicketId}/status`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${agent1Token}` },
+      body: {
+        status: 'RESOLVED',
+        resolutionSummary: 'Issue resolved by adjusting rate limit tiers.',
+      },
+    });
+    assert(auditResolveRes.status === 200, 'Audit test: Ticket resolved with summary');
+
+    // F. Reopen ticket
+    const auditReopenRes = await request(`/api/tickets/${auditTicketId}/reopen`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${agent1Token}` },
+      body: { reason: 'Customer reported unexpected recurrence within 7 days.' },
+    });
+    assert(auditReopenRes.status === 200, 'Audit test: Ticket reopened within 7-day window');
+
+    // G. Fetch chronological history via GET /api/tickets/:id/events
+    const eventsRes = await request(`/api/tickets/${auditTicketId}/events`, {
+      headers: { Authorization: `Bearer ${agent1Token}` },
+    });
+    assert(eventsRes.status === 200, 'GET /api/tickets/:id/events returns 200 OK');
+    const ticketEvents = eventsRes.data.events;
+    assert(Array.isArray(ticketEvents) && ticketEvents.length >= 6, 'Audit test: All lifecycle events retrieved');
+
+    // H. Verify every required event is recorded
+    const eventTypes = ticketEvents.map((e) => e.eventType);
+    assert(eventTypes.includes('TICKET_CREATED'), 'Audit recorded: TICKET_CREATED');
+    assert(eventTypes.includes('PRIORITY_CHANGED'), 'Audit recorded: PRIORITY_CHANGED');
+    assert(eventTypes.includes('AGENT_ASSIGNED'), 'Audit recorded: AGENT_ASSIGNED');
+    assert(eventTypes.includes('CUSTOMER_REPLY'), 'Audit recorded: CUSTOMER_REPLY');
+    assert(eventTypes.includes('TICKET_RESOLVED'), 'Audit recorded: TICKET_RESOLVED');
+    assert(eventTypes.includes('TICKET_REOPENED'), 'Audit recorded: TICKET_REOPENED');
+
+    // I. Verify chronological ordering (createdAt ascending)
+    const isSorted = ticketEvents.every((e, i) => i === 0 || new Date(e.createdAt) >= new Date(ticketEvents[i - 1].createdAt));
+    assert(isSorted, 'Audit events are strictly ordered chronologically (createdAt ascending)');
+
+    // J. Verify Actor & Server-generated timestamp on every event
+    const allHaveActorAndTimestamp = ticketEvents.every((e) => e.actor && e.actor.name && e.createdAt);
+    assert(allHaveActorAndTimestamp, 'Every audit event contains authoritative actor and server timestamp');
+
+    // K. Verify previous and new values preserved
+    const priorityEventCheck = ticketEvents.find((e) => e.eventType === 'PRIORITY_CHANGED');
+    assert(priorityEventCheck.oldValue === 'MEDIUM' && priorityEventCheck.newValue === 'URGENT', 'PRIORITY_CHANGED preserves oldValue (MEDIUM) and newValue (URGENT)');
+
+    // L. Database-Level Trigger Protection: Attempt UPDATE on TicketEvent record -> REJECTED
+    const targetEvent = ticketEvents[0];
+    let updateBlocked = false;
+    try {
+      await prisma.ticketEvent.update({
+        where: { id: targetEvent.id },
+        data: { newValue: 'MALICIOUS_TAMPERED_VALUE' },
+      });
+    } catch (err) {
+      updateBlocked = err.message.includes('Audit trail violation') || err.message.includes('immutable');
+    }
+    assert(updateBlocked, 'Security: PostgreSQL database trigger strictly rejects UPDATE on audit records');
+
+    // M. Database-Level Trigger Protection: Attempt DELETE on TicketEvent record -> REJECTED
+    let deleteBlocked = false;
+    try {
+      await prisma.ticketEvent.delete({
+        where: { id: targetEvent.id },
+      });
+    } catch (err) {
+      deleteBlocked = err.message.includes('Audit trail violation') || err.message.includes('append-only');
+    }
+    assert(deleteBlocked, 'Security: PostgreSQL database trigger strictly rejects DELETE on audit records');
 
     console.log(`\n========================================`);
     console.log(`Test Results: ${passed} Passed, ${failed} Failed`);

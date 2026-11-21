@@ -170,6 +170,28 @@ function validateTransition(ticket, newStatus, user, { resolutionSummary, reason
 }
 
 /**
+ * Retrieve or dynamically provision the dedicated System Automation user
+ */
+async function getSystemUser(tx = prisma) {
+  let systemUser = await tx.user.findUnique({
+    where: { email: 'system@frontdesk.local' },
+  });
+  if (!systemUser) {
+    const { hashPassword } = require('../utils/password');
+    const passwordHash = await hashPassword('system_automation_pwd_2026');
+    systemUser = await tx.user.create({
+      data: {
+        name: 'System Automation',
+        email: 'system@frontdesk.local',
+        passwordHash,
+        role: 'ADMIN',
+      },
+    });
+  }
+  return systemUser;
+}
+
+/**
  * Execute automatic scheduled closure for tickets waiting for customer responses
  * Business Rule 9:
  * When the customer does not respond for approximately one working week (5 working days / 2,700 working minutes),
@@ -274,15 +296,19 @@ async function processAutoClosure(options = {}) {
             },
           });
 
-          // 3. Record append-only system auto-close event
+          // 3. Explicit system actor for automated system events (Requirement 10)
+          const systemUser = await getSystemUser(tx);
+
+          // 4. Record append-only system auto-close event
           await tx.ticketEvent.create({
             data: {
               ticketId: ticket.id,
-              actorId: null, // System-initiated event
+              actorId: systemUser.id, // Explicit system actor
               eventType: 'SYSTEM_AUTO_CLOSED',
               oldValue: ticket.status,
               newValue: 'CLOSED',
               metadata: {
+                actorName: systemUser.name,
                 reason: 'Automatically closed after 5 working days without customer reply',
                 waitingSince,
                 closedAt: now,
@@ -358,6 +384,7 @@ module.exports = {
   REOPENING_WINDOW_MS,
   AUTO_CLOSE_WORKING_DAYS,
   AUTO_CLOSE_WORKING_MINUTES,
+  getSystemUser,
   isTransitionAllowed,
   checkReopeningEligibility,
   validateTransition,

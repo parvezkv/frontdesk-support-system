@@ -693,21 +693,74 @@ export default function App() {
                   </div>
                 )}
 
-                {/* 3. Audit Trail Tab */}
+                {/* 3. Audit Trail Tab (Chronological Append-Only History) */}
                 {activeTab === 'events' && isStaff && (
-                  <div className="space-y-2">
-                    {selectedTicket.events?.map((ev) => (
-                      <div key={ev.id} className="p-2.5 rounded bg-white border border-slate-200 text-xs flex items-start justify-between">
-                        <div>
-                          <div className="font-semibold text-slate-800 flex items-center space-x-2">
-                            <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[10px]">
-                              {ev.eventType}
-                            </span>
-                            <span>{ev.newValue || ev.oldValue}</span>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between px-1 text-xs text-slate-500 font-medium">
+                      <span>Chronological Audit History ({selectedTicket.events?.length || 0} events)</span>
+                      <span className="flex items-center space-x-1 text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[11px]">
+                        <Shield className="w-3 h-3" />
+                        <span>Database-level Append-Only Protected</span>
+                      </span>
+                    </div>
+
+                    {selectedTicket.events?.map((ev, idx) => (
+                      <div key={ev.id || idx} className="p-3 rounded-lg bg-white border border-slate-200 text-xs shadow-xs hover:border-slate-300 transition-colors">
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-1">
+                            <div className="font-semibold text-slate-800 flex items-center space-x-2">
+                              <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
+                                ev.eventType.includes('RESOLVED') || ev.eventType.includes('REOPENED')
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : ev.eventType.includes('PAUSED') || ev.eventType.includes('RESUMED')
+                                  ? 'bg-purple-100 text-purple-800'
+                                  : ev.eventType.includes('ASSIGN')
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : 'bg-slate-100 text-slate-700'
+                              }`}>
+                                {ev.eventType}
+                              </span>
+                              <span>
+                                {ev.oldValue && ev.newValue && ev.oldValue !== ev.newValue ? (
+                                  <span>
+                                    <span className="text-slate-500 line-through mr-1">{ev.oldValue}</span>
+                                    <span className="text-slate-400 font-bold mr-1">➔</span>
+                                    <span className="text-slate-800 font-bold">{ev.newValue}</span>
+                                  </span>
+                                ) : (
+                                  <span>{ev.newValue || ev.oldValue}</span>
+                                )}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center space-x-2 text-[11px] text-slate-500">
+                              <span>Actor:</span>
+                              <span className="font-medium text-slate-700 bg-slate-100 px-1.5 py-0.2 rounded">
+                                {ev.actor?.name || 'System Automation'}
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                ({ev.actor?.role || 'SYSTEM'})
+                              </span>
+                            </div>
+
+                            {/* Metadata context if available */}
+                            {ev.metadata && (ev.metadata.reason || ev.metadata.resolutionSummary || ev.metadata.pausedWorkingMinutes) && (
+                              <p className="text-[11px] text-slate-600 bg-slate-50 p-1.5 rounded border border-slate-100 mt-1">
+                                {ev.metadata.resolutionSummary && <span>Resolution: {ev.metadata.resolutionSummary}</span>}
+                                {ev.metadata.reason && <span>Reason: {ev.metadata.reason}</span>}
+                                {ev.metadata.pausedWorkingMinutes && <span>Paused Working Minutes: {ev.metadata.pausedWorkingMinutes} min</span>}
+                              </p>
+                            )}
                           </div>
-                          <p className="text-[11px] text-slate-500 mt-0.5">By: {ev.actor?.name || 'System'}</p>
+
+                          <div className="text-right text-[11px] text-slate-400 whitespace-nowrap pl-3">
+                            <div className="flex items-center space-x-1 justify-end">
+                              <Clock className="w-3 h-3 text-slate-400" />
+                              <span>{ev.createdAtIST}</span>
+                            </div>
+                            <span className="text-[9px] text-slate-400 font-mono">#{idx + 1}</span>
+                          </div>
                         </div>
-                        <span className="text-[11px] text-slate-500">{ev.createdAtIST}</span>
                       </div>
                     ))}
                   </div>
