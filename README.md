@@ -1,367 +1,570 @@
 # Frontdesk — Customer Support Ticket Management System
 
-Frontdesk is a full-stack, enterprise customer support ticket management system built as an integrated single application for **iNav Technologies**.
+A full-stack customer support ticket management system developed for the **iNav Technologies Full Stack Developer Machine Test**.
 
----
+Frontdesk provides a centralized platform for customers to raise support tickets and for support agents and administrators to manage ticket assignments, conversations, priorities, SLAs, and ticket lifecycles.
+
+## 🌐 Live Deployment
+
+| Component | URL |
+|---|---|
+| Frontend Application | https://frontdesk-support-system.vercel.app |
+| Backend API | https://frontdesk-support-api.onrender.com |
+| API Health Check | https://frontdesk-support-api.onrender.com/api/health |
+| GitHub Repository | https://github.com/parvezkv/frontdesk-support-system |
+
+**Deployment architecture:**
+- Frontend hosted on Vercel.
+- Backend REST API hosted on Render.
+- PostgreSQL database hosted on Supabase.
+- Prisma ORM manages database access and migrations.
+
+## 🔑 Evaluation Login Accounts
+
+The following production accounts have been created and login has been tested successfully.
+
+| Role | Name | Login Email |
+|---|---|---|
+| Administrator | Frontdesk Admin | `frontdesk.admin@example.com` |
+| Agent | test1 | `agent.test1@example.com` |
+| Customer | Test Customer | `customer.test@example.com` |
+
+**Password information:"123456" is the password for every user"**
+
+**How to evaluate:**
+1. Open the live application.
+2. Log in using one of the accounts above.
+3. Use the Admin account to access administrative functionality.
+4. Use the Agent account to manage and respond to assigned tickets.
+5. Use the Customer account to create tickets and participate in conversations.
+
+Note: The deployed frontend currently provides a login page, but does not include a separate customer signup page. Customer registration is supported through the backend registration API.
 
 ## 🛠 Technology Stack
 
-- **Frontend:** React 18, Vite, JavaScript
-- **Styling:** Tailwind CSS, PostCSS, Autoprefixer
-- **Backend:** Node.js, Express.js (REST API architecture)
-- **Database:** PostgreSQL
-- **ORM:** Prisma ORM
-- **Authentication:** Stateless JWT (JSON Web Tokens) with bcrypt password hashing
-- **Icons:** Lucide React
+| Layer | Technologies |
+|---|---|
+| Frontend | React, Vite, JavaScript |
+| Styling | Tailwind CSS, PostCSS, Autoprefixer |
+| Backend | Node.js, Express.js |
+| API | REST API |
+| Database | PostgreSQL |
+| ORM | Prisma ORM |
+| Authentication | JWT, bcrypt |
+| Icons | Lucide React |
+| Deployment | Vercel, Render, Supabase |
 
----
-
-## 📁 Project Directory Structure
+## 📁 Project Structure
 
 ```text
 frontdesk-support-system/
-├── .gitignore                   # Excludes secrets, node_modules, build/dist, logs, OS/IDE artifacts
-├── package.json                 # Root package orchestrating dev, test, build, db, and install scripts
-├── README.md                    # System architecture, clean-clone setup, and API documentation
 │
-├── client/                      # Frontend Application (React + Vite + Tailwind CSS)
-│   ├── .env.example             # Frontend environment variable template
-│   ├── .env                     # Local frontend environment variables (git-ignored)
-│   ├── index.html               # Main HTML entry point
-│   ├── package.json             # Frontend dependencies & scripts
-│   ├── postcss.config.js        # PostCSS configuration for Tailwind CSS
-│   ├── tailwind.config.js       # Tailwind CSS theme & content configuration
-│   ├── vite.config.js           # Vite development and build configuration
+├── README.md
+├── .gitignore
+├── package.json
+│
+├── client/
+│   ├── .env.example
+│   ├── package.json
+│   ├── index.html
+│   ├── vite.config.js
+│   ├── tailwind.config.js
+│   ├── postcss.config.js
+│   │
 │   └── src/
-│       ├── assets/              # Static frontend assets
-│       ├── components/          # Reusable UI components
-│       ├── context/             # Global React state contexts
-│       ├── hooks/               # Custom React hooks
-│       ├── pages/               # Application view pages
-│       ├── services/            # Axios API client with JWT interceptors
+│       ├── assets/
+│       ├── components/
+│       ├── context/
+│       ├── hooks/
+│       ├── pages/
+│       ├── services/
 │       │   └── api.js
-│       ├── utils/               # Helper utilities and formatters
-│       ├── App.jsx              # Application root component
-│       ├── index.css            # Tailwind directives and custom CSS
-│       └── main.jsx             # React DOM mounting entry point
+│       ├── utils/
+│       ├── App.jsx
+│       ├── index.css
+│       └── main.jsx
 │
-└── server/                      # Backend Application (Node.js + Express + Prisma + PostgreSQL)
-    ├── .env.example             # Backend environment variable template
-    ├── .env                     # Local backend environment variables (git-ignored)
-    ├── package.json             # Backend dependencies & Prisma scripts
-    ├── test-sla.js              # SLA engine unit and boundary test suite
-    ├── test-api.js              # Comprehensive automated API verification suite
-    ├── test-integration-review.js # Full lifecycle and integration review test suite
-    ├── test-user-provisioning.js # User provisioning and RBAC registration test suite
+└── server/
+    ├── .env.example
+    ├── package.json
+    ├── test-sla.js
+    ├── test-api.js
+    ├── test-integration-review.js
+    ├── test-user-provisioning.js
+    │
     ├── scripts/
-    │   └── create-admin.js      # Production initial Administrator provisioning CLI script
+    │   └── create-admin.js
+    │
     ├── prisma/
-    │   ├── schema.prisma        # Prisma PostgreSQL schema definition & enums
-    │   ├── migrations/          # Git-tracked SQL migration files
-    │   └── seed.js              # Database seed script for roles, users, holidays, tickets (dev-only)
+    │   ├── schema.prisma
+    │   ├── migrations/
+    │   └── seed.js
+    │
     └── src/
-        ├── app.js               # Express app setup, CORS, JSON parsers, routes
-        ├── server.js            # HTTP server startup & graceful shutdown handlers
         ├── config/
-        │   ├── db.js            # PrismaClient singleton instance
-        │   └── env.js           # Validated environment configuration
-        ├── controllers/         # Express request handlers (auth, ticket)
+        │   ├── db.js
+        │   └── env.js
+        ├── controllers/
         │   ├── auth.controller.js
         │   └── ticket.controller.js
-        ├── middlewares/         # Security guards, request validators, error handlers
-        │   ├── auth.js          # JWT verification & RBAC authorization
-        │   ├── validator.js     # Request body validators
-        │   └── errorHandler.js  # Global centralized error handler
-        ├── routes/              # Express REST API routes
-        │   ├── health.routes.js # Health check endpoint (/api/health)
-        │   ├── auth.routes.js   # Authentication endpoints (/api/auth/*)
-        │   └── ticket.routes.js # Ticket lifecycle endpoints (/api/tickets/*)
-        ├── services/            # Core business logic layer
-        └── utils/
-            ├── date.js          # UTC to Asia/Kolkata date formatter & SLA calculators
-            ├── jwt.js           # JWT sign & verify utility
-            └── password.js      # Bcrypt password hashing & comparison
+        ├── middlewares/
+        │   ├── auth.js
+        │   ├── validator.js
+        │   └── errorHandler.js
+        ├── routes/
+        │   ├── health.routes.js
+        │   ├── auth.routes.js
+        │   └── ticket.routes.js
+        ├── services/
+        ├── utils/
+        │   ├── date.js
+        │   ├── jwt.js
+        │   └── password.js
+        ├── app.js
+        └── server.js
 ```
 
----
+## ⚙️ Local Installation and Setup
 
-## ⚙️ Environment Variables Configuration
+### Prerequisites
 
-### Backend (`server/.env`)
-| Variable | Description | Default / Example |
-| :--- | :--- | :--- |
-| `PORT` | Port for Express API server | `5000` |
-| `NODE_ENV` | Application environment (`development` / `production`) | `development` |
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://postgres:1234@localhost:5432/frontdesk_db?schema=public` |
-| `JWT_SECRET` | Secret key for signing and verifying JWT tokens (development-only default; production requires a strong, random secret) | `frontdesk_jwt_secret_token_inav_tech_placement_2026` |
-| `CLIENT_URL` | Allowed origin for Cross-Origin Resource Sharing (CORS) | `http://localhost:5173` |
+- Node.js and npm
+- PostgreSQL
+- Git
 
-> ⚠️ **Production Security Notice:** The default `JWT_SECRET` above is provided solely for local development convenience. Production deployments must configure a unique, high-entropy random secret (e.g., generated with `openssl rand -hex 32`).
+### 1. Clone the repository
 
-### Frontend (`client/.env`)
-| Variable | Description | Default / Example |
-| :--- | :--- | :--- |
-| `VITE_API_URL` | Base URL for REST API requests | `http://localhost:5000/api` |
-
----
-
-## 🔑 User Roles & Production Provisioning
-
-Frontdesk implements role-based access control across three user roles: `ADMIN`, `AGENT`, and `CUSTOMER`.
-
-### Development Evaluation
-- In local development (`NODE_ENV=development`), the application provides 1-click demo persona quick-switcher buttons in the login page, sidebar, and header for rapid multi-role evaluation across Admin, Agent, and Customer accounts.
-- Database demo seeding (`npm run db:seed --prefix server`) is available **strictly in development** to populate initial sample tickets and evaluation personas.
-
-### Production Provisioning & Security
-- **Production Seed Protection:** The database seed script (`server/prisma/seed.js`) is strictly **blocked** when `NODE_ENV=production`. Running the seed command in production halts immediately with an error to prevent inserting default accounts or overwriting data.
-- **Initial Administrator Provisioning:** In a fresh production deployment where no users exist, the initial Administrator account is created using the dedicated server CLI script:
-  ```bash
-  ADMIN_EMAIL="admin@yourdomain.com" ADMIN_NAME="System Administrator" ADMIN_PASSWORD="<StrongSecurePassword>" npm run create-admin --prefix server
-  ```
-  *(or `node server/scripts/create-admin.js` with environment variables)*.
-  - **Required Environment Variables:**
-    - `ADMIN_EMAIL` — Valid administrator email address.
-    - `ADMIN_NAME` — Administrator display name (minimum 2 characters).
-    - `ADMIN_PASSWORD` — Administrator password (minimum 6 characters).
-  - **Security Best Practice:** Passwords must be passed through environment variables rather than command-line arguments to prevent exposure in process listings (`ps`) or shell history.
-  - **Duplicate Account Protection:** If an account with the specified email already exists, the script fails safely with a non-zero exit code without altering the existing user or password. Passwords are saved as standard bcrypt hashes.
-- **Agent Account Creation:** Once the initial Administrator logs in, they can create `AGENT` (or additional `ADMIN`) accounts via the authenticated `POST /api/auth/register` API endpoint by passing their Bearer JWT. Anonymous attempts to create `AGENT` or `ADMIN` roles return `403 Forbidden`.
-- **Customer Account Creation:** Customers can self-register at any time using the public `POST /api/auth/register` endpoint (which defaults to the `CUSTOMER` role), or support staff can create customer records during ticket submission.
-- **Demo Switcher Exclusion:** Demo persona switching controls, demo account lists, and default passwords are completely stripped and dead-code eliminated from production frontend builds (`import.meta.env.DEV`).
-
----
-
-## 📊 Database Entities, Constraints & Indexes
-
-1. **User (`users`):**
-   - Fields: `id` (UUID PK), `name`, `email` (UK), `passwordHash`, `role` (`ADMIN` | `AGENT` | `CUSTOMER`), `createdAt`.
-   - Index: `[role]`.
-2. **Customer (`customers`):**
-   - Fields: `id` (UUID PK), `name`, `email` (UK), `phone`, `createdAt`, `userId` (FK to User, unique).
-   - Indexes: `[email]`, `[name]`.
-3. **Ticket (`tickets`):**
-   - Fields: `id` (UUID PK), `ticketNumber` (Autoincrement UK), `subject`, `description`, `customerId` (FK to Customer), `assignedAgentId` (FK to User, nullable), `priority` (`LOW` | `MEDIUM` | `HIGH` | `URGENT`), `status` (`OPEN` | `IN_PROGRESS` | `PENDING_CUSTOMER` | `RESOLVED` | `CLOSED`), `createdAt`, `updatedAt`, `resolvedAt`, `closedAt`, `firstResponseAt`, `responseDueAt`, `resolutionDueAt`.
-   - Indexes: `[ticketNumber]`, `[customerId]`, `[assignedAgentId]`, `[status]`, `[priority]`, `[createdAt]`, `[status, priority]`, `[assignedAgentId, status]`.
-4. **Message (`messages`):**
-   - Fields: `id` (UUID PK), `ticketId` (FK to Ticket), `senderId` (FK to User), `content`, `createdAt`.
-   - Indexes: `[ticketId]`, `[senderId]`, `[createdAt]`.
-5. **InternalNote (`internal_notes`):**
-   - Fields: `id` (UUID PK), `ticketId` (FK to Ticket), `authorId` (FK to User), `content`, `createdAt`.
-   - Indexes: `[ticketId]`, `[authorId]`, `[createdAt]`.
-6. **TicketAssignment (`ticket_assignments`):**
-   - Fields: `id` (UUID PK), `ticketId` (FK to Ticket), `agentId` (FK to User), `assignedAt`, `releasedAt`.
-   - Indexes: `[ticketId]`, `[agentId]`, `[assignedAt]`.
-7. **TicketEvent (`ticket_events`):**
-   - Fields: `id` (UUID PK), `ticketId` (FK to Ticket), `actorId` (FK to User), `eventType`, `oldValue`, `newValue`, `metadata` (JSON), `createdAt`.
-   - Indexes: `[ticketId]`, `[actorId]`, `[createdAt]`, `[eventType]`.
-   - **Append-only:** No application API exists to update or delete events.
-8. **Holiday (`holidays`):**
-   - Fields: `id` (UUID PK), `date` (Date UK), `name`.
-9. **SLAPause (`sla_pauses`):**
-   - Fields: `id` (UUID PK), `ticketId` (FK to Ticket), `startedAt`, `endedAt`.
-   - Index: `[ticketId]`.
-
----
-
-## 🕒 Timezone Handling: UTC & Asia/Kolkata
-
-- **Database Storage:** All dates and timestamps are strictly stored in standard **UTC** ISO-8601 (`DateTime`).
-- **Display Representation:** The backend date utility automatically attaches **Asia/Kolkata** formatted display fields to all API responses (e.g., `createdAtIST`, `responseDueAtIST`, `resolutionDueAtIST` formatted as `21 Nov 2026, 08:15 PM IST`).
-
----
-
-## 🕒 SLA Calculation Engine & Working Hours Rules
-
-Frontdesk incorporates a reusable, backend-enforced SLA engine ([`server/src/services/sla.service.js`](file:///e:/frontdesk/frontdesk-support-system/server/src/services/sla.service.js)):
-
-### Working Hours Definition
-- **Working Days:** Monday to Friday.
-- **Working Hours:** 9:30 AM to 6:30 PM (9 working hours / 540 working minutes per day).
-- **Time Zone:** `Asia/Kolkata` (UTC +05:30).
-- **Exclusions:**
-  - Saturdays and Sundays are strictly excluded.
-  - Configured festival/company holidays are strictly excluded (from `Holiday` table).
-
-### SLA Targets
-| Priority | First Response Target | Resolution Target |
-| :--- | :--- | :--- |
-| **Critical / Urgent** | 2 working hours (120 working minutes) | **Same working day** (6:30 PM IST of current applicable working day) |
-| **High** | 3 working hours (180 working minutes) | 1 working day (540 working minutes) |
-| **Medium** | 4 working hours (half a working day / 240 min) | 3 working days (1,620 working minutes) |
-| **Small / Low** | 8 working hours (1 working day / 480 min) | 1 working week (5 working days / 2,700 working minutes) |
-
-> 📌 **Documented Interpretation (Critical Resolution):**
-> "Same working day" is interpreted as **6:30 PM IST (end of shift) of the current applicable working day**.
-> If created during working hours, it is 6:30 PM IST of that same day.
-> If created after hours, on a weekend, or on a holiday, the applicable working day is the next working day, so the resolution deadline is 6:30 PM IST of that next working day.
-
-### Pause & Resume Lifecycle
-1. When a ticket enters `WAITING_FOR_CUSTOMER` (or `PENDING_CUSTOMER`), an `SLAPause` record is created (`startedAt = now, endedAt = null`).
-2. Multiple waiting periods are fully supported and accumulated.
-3. When the customer replies (or status moves back to `IN_PROGRESS`), the open pause is closed (`endedAt = now`), the working minutes elapsed during the pause are calculated, and all unfulfilled deadlines (`responseDueAt`, `resolutionDueAt`) are extended by that exact duration.
-4. An append-only audit event `SLA_RESUMED` logs the exact working minutes paused and updated deadlines.
-
-### Priority Change Recalculation
-- When priority changes (e.g. from Small to Critical), new SLA deadlines are recalculated starting from the priority-change time.
-- The previous deadlines and priority are preserved in the event history (`PRIORITY_CHANGED`).
-
-### Overdue Status Suppression
-- Per Rule 8, **a ticket is never marked overdue during weekends, outside working hours, or on festival holidays**. The SLA overdue flag is active only during working hours.
-
----
-
-## 🔄 Ticket Lifecycle & Status Transitions
-
-Frontdesk enforces a strict backend state machine and automated lifecycle engine ([`server/src/services/ticketLifecycle.service.js`](file:///e:/frontdesk/frontdesk-support-system/server/src/services/ticketLifecycle.service.js)):
-
-### Supported Statuses
-- **`OPEN`**: Newly created ticket, awaiting assignment.
-- **`IN_PROGRESS`**: Active ticket claimed and worked on by an agent.
-- **`WAITING_FOR_CUSTOMER`**: Agent requested information; SLA timers paused.
-- **`RESOLVED`**: Issue solved; 7-calendar-day reopening window active.
-- **`CLOSED`**: Terminal state; permanently archived ticket.
-
-### Valid State Transitions
-| From Status | Allowed Target Statuses | Trigger / Conditions |
-| :--- | :--- | :--- |
-| `OPEN` | `IN_PROGRESS`, `CLOSED` | Agent assignment (`/assign`) or direct self-close |
-| `IN_PROGRESS` | `WAITING_FOR_CUSTOMER`, `RESOLVED`, `CLOSED`, `OPEN` | Question asked (pauses SLA), resolved with summary, close, or release |
-| `WAITING_FOR_CUSTOMER` | `IN_PROGRESS`, `RESOLVED`, `CLOSED` | Customer reply (resumes SLA), agent solves, or auto-closed |
-| `RESOLVED` | `IN_PROGRESS`, `CLOSED` | Reopened within 7-day window, or finalized |
-| `CLOSED` | *(None — Terminal)* | Transitions out of `CLOSED` return HTTP 400 |
-
-### Reopening Rules (7-Calendar-Day Window)
-- **Documented Interpretation**: Reopening is permitted within **7 calendar days** of `resolvedAt`.
-- **Authorization**: Restricted to `AGENT` and `ADMIN` roles (`403 Forbidden` for customers).
-- **Post-Expiry Enforcement**: Attempts to reopen after 7 days are rejected with `HTTP 400 Bad Request`. Users must create a new ticket.
-- **History Preservation**: Previous resolution timestamps and status change events are preserved. A `TICKET_REOPENED` event logs the previous `resolvedAt` and reopening reason. SLA resolution deadlines are recalculated from the reopen timestamp.
-
-### Automatic Scheduled Closure Job
-- **Dormancy Threshold**: Tickets waiting in `WAITING_FOR_CUSTOMER` for **5 working days** (2,700 working minutes).
-- **Working Hours Exclusions**: Weekends and configured company holidays are strictly excluded from the dormancy duration.
-- **Customer Reply Defense**: The job verifies no subsequent customer messages exist before closing.
-- **Idempotency**: Running the job repeatedly produces zero redundant closures or duplicate events.
-- **Audit Logging**: Appends a `SYSTEM_AUTO_CLOSED` event with an explicit system actor (`System Automation`, `system@frontdesk.local`) documenting elapsed working minutes.
-
----
-
-## 🔒 Security & Business Rules
-
-1. **Password Security:**
-   - Passwords hashed with bcrypt (cost factor 10).
-   - Password hashes are **never** selected or returned in any API responses.
-2. **Customer Data Isolation:**
-   - Customers can **only** list and view their own tickets (`customerId` forced via authenticated session).
-   - Customers receive `403 Forbidden` if attempting to access another customer's ticket.
-3. **Internal Notes Confidentiality:**
-   - Customer-facing APIs **never** expose internal notes, assignments, or internal audit events.
-   - Any attempt by a Customer to add an internal note returns `403 Forbidden`.
-4. **Ticket Assignment & Ownership Concurrency Rules:**
-   - **Pessimistic Row Locking (`SELECT ... FOR UPDATE`):** When taking an unassigned ticket, PostgreSQL locks the ticket row.
-   - **Atomic Check & 409 Conflict:** If another agent has taken the ticket, the backend immediately raises `HTTP 409 Conflict` with: `"Conflict: This ticket has already been assigned to another agent."`.
-   - **Database-Level Constraint:** A partial unique index (`CREATE UNIQUE INDEX unique_active_ticket_assignment ON ticket_assignments ("ticketId") WHERE "releasedAt" IS NULL;`) physically prevents duplicate active assignments.
-   - **Authorization Guards:** Only the currently assigned agent or an `ADMIN` can release or reassign tickets (`403 Forbidden` for unauthorized attempts).
-   - **History Preservation:** Whenever a ticket is reassigned or released, previous assignments have `releasedAt` timestamped in UTC.
-5. **Reliable Append-Only Audit History (Database Trigger Protected):**
-   - **Comprehensive Coverage:** Events are transactionally recorded for `TICKET_CREATED`, `AGENT_ASSIGNED`, `AGENT_REASSIGNED`, `AGENT_RELEASED`, `PRIORITY_CHANGED`, `STATUS_CHANGED`, `CUSTOMER_REPLY`, `INTERNAL_NOTE_ADDED`, `SLA_PAUSED`, `SLA_RESUMED`, `TICKET_RESOLVED`, `TICKET_REOPENED`, and `SYSTEM_AUTO_CLOSED`.
-   - **Authoritative Provenance:** Every event records what happened (`eventType`, `oldValue`, `newValue`), when it happened (server-generated UTC `createdAt`), and who performed it (`actorId` from authenticated session, or explicit `System Automation` actor).
-   - **Database-Level Immutability Trigger:** A PostgreSQL BEFORE trigger (`trg_prevent_ticket_events_modification`) strictly rejects `UPDATE` and `DELETE` queries with exception code `P0001`. Audit records can never be mutated or erased.
-   - **Zero Modification Endpoints:** The API provides strictly read-only access (`GET /api/tickets/:id/events`); no update or delete routes exist.
-6. **Ticket Resolution Validation:**
-   - Changing status to `RESOLVED` or `CLOSED` requires a mandatory `resolutionSummary`.
-
----
-
-## 🖥 Frontend Architecture (React + Tailwind CSS)
-
-Frontdesk features a professional enterprise SaaS dashboard built with **React 18**, **React Router v6**, **Tailwind CSS**, and **Lucide React** icons. The frontend communicates exclusively with the live Express REST API — there is no mock data.
-
-### Design System
-- **Surfaces:** Clean white/light-grey (`bg-slate-50`, `bg-white`).
-- **Sidebar:** Dark navy (`bg-slate-900`) with blue primary actions (`bg-blue-600`).
-- **Borders & Shadows:** Subtle (`border-slate-200`, `shadow-xs`).
-- **Typography:** Clear, professional tables and forms with consistent spacing.
-- **Layout:** Responsive sidebar + header + content layout, scrollable content regions.
-
-### Application Pages & Components
-
-| Path | Component | Description |
-| :--- | :--- | :--- |
-| `/login` | `LoginPage` | Email/password login form with JWT authentication, error validation, and 1-click demo persona quick-switcher buttons (development only; hidden and disabled in production). |
-| `/dashboard` | `DashboardPage` | 6 KPI stat cards (Open, In Progress, Waiting for Customer, Overdue, Resolved, Assigned to Me), SLA policy banner, and recent activity feed. Each card is click-to-filter. |
-| `/tickets` | `TicketListPage` | Professional data table with ticket number, subject, customer, priority badge, status badge, assigned agent, first response SLA indicator, resolution SLA indicator, and created date. Includes multi-parameter filtering (status, priority, assigned agent, overdue, waiting for customer), search with debounce, and pagination. |
-| `/tickets/:id` | `TicketDetailPage` | Two-column layout: **Left** — tabbed Customer Conversation, Private Internal Notes (staff only, with warning banner), and Chronological Audit Trail (with database trigger protection badge). **Right** — SLA countdown/overdue status, customer profile, assignment controls (Take / Reassign / Release), status lifecycle transitions, priority change with SLA recalculation, and resolve/reopen actions. |
-
-### Reusable Components
-
-| Component | Purpose |
-| :--- | :--- |
-| `Sidebar` | Dark navy navigation sidebar with logo, nav links, demo persona switcher grid (development only), user badge, and logout. |
-| `Header` | Page title, working hours indicator, and inline persona quick-switcher bar (development only). |
-| `StatusBadge` | Color-coded status pill with icon for `OPEN`, `IN_PROGRESS`, `WAITING_FOR_CUSTOMER`, `RESOLVED`, `CLOSED`. |
-| `PriorityBadge` | Color-coded priority pill with icon for `URGENT`, `HIGH`, `MEDIUM`, `LOW`. |
-| `SLABadge` | Displays SLA status (Met ✅, Due, Overdue 🔴, Paused ⏸) for response and resolution targets. |
-| `CreateTicketModal` | Form with customer selection (or inline new customer creation for staff), subject, priority with SLA targets, and description. |
-| `ReassignModal` | Agent selection dropdown to reassign a ticket. |
-| `ResolveModal` | Mandatory resolution summary form required to mark a ticket RESOLVED. |
-| `ReopenModal` | Optional reason form to reopen a resolved ticket within the 7-day window. |
-| `ExportModal` | JSON preview and download for ticket conversation export. |
-
-### Authentication & State Management
-- **AuthContext** (`context/AuthContext.jsx`): Manages JWT token, user session, `login()`, `logout()`, `switchPersona()` for rapid development evaluation (disabled in production), and role-based helpers (`isStaff`, `isAdmin`, `isCustomer`).
-- **Protected Routes**: All routes except `/login` require an authenticated session. Unauthenticated users are redirected to the login page.
-- **Axios Interceptor** (`services/api.js`): Automatically attaches the JWT `Authorization` header and clears the session on 401 responses.
-
-### Production Deployment
-In production, the Express server serves the built React client from `client/dist/` with SPA fallback, so both frontend and API run on a single port (`PORT`, default 5000):
 ```bash
-npm run build      # Build the React client
-npm start          # Serves API + frontend on port 5000
+git clone https://github.com/parvezkv/frontdesk-support-system.git
+cd frontdesk-support-system
 ```
 
----
+### 2. Install dependencies
+
+```bash
+npm install
+cd server
+npm install
+cd ../client
+npm install
+cd ..
+```
+
+### 3. Configure environment variables
+
+Create `server/.env`:
+
+```env
+PORT=5000
+NODE_ENV=development
+DATABASE_URL="postgresql://postgres:YOUR_PASSWORD@localhost:5432/frontdesk_db?schema=public"
+JWT_SECRET="YOUR_LOCAL_DEVELOPMENT_SECRET"
+CLIENT_URL="http://localhost:5174"
+```
+
+Create `client/.env`:
+
+```env
+VITE_API_URL="http://localhost:5000/api"
+```
+
+Replace the database credentials and JWT secret with your own local values.
+
+Never commit `.env` files or production credentials.
+
+### 4. Generate Prisma Client and run migrations
+
+```bash
+cd server
+npx prisma generate
+npx prisma migrate deploy
+```
+
+### 5. Optional development seed
+
+```bash
+npm run db:seed
+```
+
+The seed script is intended only for development. It is blocked in production.
+
+### 6. Start the backend
+
+From the `server` directory:
+
+```bash
+npm run dev
+```
+
+Backend:
+
+`http://localhost:5000`
+
+### 7. Start the frontend
+
+Open another terminal:
+
+```bash
+cd client
+npm run dev
+```
+
+Frontend:
+
+`http://localhost:5174`
+
+## 👥 User Roles and Access Control
+
+Frontdesk supports three roles:
+
+### Administrator (ADMIN)
+- Access to the administrative dashboard.
+- View and manage support tickets.
+- Assign, reassign, and release tickets.
+- Manage ticket priorities and statuses.
+- Access internal notes and audit history.
+- Perform administrative actions.
+
+### Agent (AGENT)
+- View and manage support tickets.
+- Take ownership of unassigned tickets.
+- Respond to customers.
+- Add private internal notes.
+- Update priority and ticket status.
+- Resolve and reopen eligible tickets.
+
+### Customer (CUSTOMER)
+- Create support tickets.
+- View their own tickets.
+- Participate in ticket conversations.
+- Reply when additional information is requested.
+- View ticket status and updates.
+
+Role permissions are enforced on the backend, not merely hidden in the frontend.
+
+## 🔐 Authentication and Production Provisioning
+
+Authentication uses JWT tokens and bcrypt password hashing.
+
+### Production security
+
+- Public registration defaults to the CUSTOMER role.
+- Only authenticated ADMIN users can create AGENT or additional ADMIN accounts through the registration API.
+- Non-admin users cannot escalate their own privileges.
+- Invalid or unauthorized tokens are rejected.
+- Password hashes are never returned in API responses.
+- Demo persona switching is disabled in production.
+- Development seed data is blocked in production.
+
+### Initial Administrator provisioning
+
+For a fresh production database, an administrator can be created using:
+
+```bash
+ADMIN_EMAIL="admin@example.com" \
+ADMIN_NAME="System Administrator" \
+ADMIN_PASSWORD="YOUR_STRONG_PASSWORD" \
+npm run create-admin --prefix server
+```
+
+The script:
+- Reads credentials from environment variables.
+- Hashes passwords using bcrypt.
+- Prevents duplicate account creation.
+- Does not print plaintext passwords.
+
+For Windows PowerShell, configure the environment variables before running:
+
+```powershell
+$env:ADMIN_EMAIL = "admin@example.com"
+$env:ADMIN_NAME = "System Administrator"
+$env:ADMIN_PASSWORD = "YOUR_STRONG_PASSWORD"
+
+npm run create-admin --prefix server
+```
+
+Clear the environment variables after provisioning.
+
+## 📊 Database Design
+
+The application uses PostgreSQL with Prisma ORM.
+
+Core entities include:
+
+| Entity | Purpose |
+|---|---|
+| User | Authentication and role information |
+| Customer | Customer profile information |
+| Ticket | Ticket details, status, priority, and SLA deadlines |
+| Message | Public customer-agent conversations |
+| InternalNote | Private staff-only notes |
+| TicketAssignment | Assignment and ownership history |
+| TicketEvent | Append-only ticket audit history |
+| Holiday | Configured company/festival holidays |
+| SLAPause | Records periods when SLA timers are paused |
+
+Important database protections include:
+- Unique user email addresses.
+- Foreign key relationships.
+- Database-level prevention of duplicate active ticket assignments.
+- An append-only audit history protected by a PostgreSQL trigger.
+
+## 🕒 SLA Management
+
+The SLA engine calculates deadlines using business hours and working days.
+
+### Working hours
+
+| Setting | Configuration |
+|---|---|
+| Working days | Monday–Friday |
+| Start time | 9:30 AM |
+| End time | 6:30 PM |
+| Time zone | Asia/Kolkata |
+| Weekends | Excluded |
+| Configured holidays | Excluded |
+
+### SLA targets
+
+| Priority | First Response | Resolution |
+|---|---|---|
+| Critical / Urgent | 2 working hours | Same working day |
+| High | 3 working hours | 1 working day |
+| Medium | 4 working hours | 3 working days |
+| Low / Small | 8 working hours | 1 working week |
+
+The High priority target is an additional policy implemented by the application.
+
+### SLA pause and resume
+
+- SLA timers pause when a ticket is waiting for the customer.
+- Multiple waiting periods are supported.
+- Customer replies resume the SLA timer.
+- Deadlines are extended by the applicable paused working time.
+- SLA pause and resume actions are recorded in the audit history.
+- Overdue calculations respect business hours, weekends, and configured holidays.
+
+All timestamps are stored in UTC and displayed using the Asia/Kolkata time zone.
+
+## 🔄 Ticket Lifecycle
+
+Supported statuses:
+
+| Status | Description |
+|---|---|
+| OPEN | Newly created ticket |
+| IN_PROGRESS | Ticket being handled by an agent |
+| WAITING_FOR_CUSTOMER | Waiting for customer information |
+| RESOLVED | Issue has been resolved |
+| CLOSED | Ticket permanently closed |
+
+### Reopening
+
+- Resolved tickets can be reopened within 7 calendar days.
+- Reopening is restricted to ADMIN and AGENT roles.
+- After the reopening window expires, a new ticket is required.
+- Previous ticket history is preserved.
+
+### Automatic closure
+
+Tickets waiting for customer responses are automatically closed after 5 working days of inactivity, excluding weekends and configured holidays.
+
+The scheduled closure process checks for subsequent customer replies and records a system-generated audit event.
+
+## 🔒 Security and Reliability
+
+### Customer data isolation
+Customers can only access tickets associated with their authenticated customer account.
+
+### Internal note confidentiality
+Internal notes are stored separately from public messages. Customer-facing APIs and exports exclude internal notes.
+
+### Concurrent ticket assignment
+Ticket assignment uses PostgreSQL row locking and a partial unique database index to prevent two agents from claiming the same active ticket.
+
+A conflicting assignment returns HTTP `409 Conflict`.
+
+### Immutable audit history
+Ticket actions are recorded with:
+- Actor information.
+- Event type.
+- Previous and new values.
+- Server-generated timestamp.
+- Relevant metadata.
+
+A PostgreSQL trigger prevents updates and deletions of audit events.
+
+### Ticket resolution
+A resolution summary is required before a ticket can be marked as resolved or closed.
+
+## 🖥 Frontend Features
+
+The frontend provides role-based dashboards and ticket management interfaces.
+
+### Dashboard
+- Ticket statistics.
+- Open and in-progress tickets.
+- Waiting-for-customer tickets.
+- Overdue tickets.
+- Resolved tickets.
+- Assigned-to-me statistics.
+- Recent activity.
+
+### Ticket listing
+- Search and pagination.
+- Status filtering.
+- Priority filtering.
+- Agent filtering.
+- Overdue filtering.
+- Waiting-for-customer filtering.
+
+### Ticket details
+- Customer conversation.
+- Private internal notes for staff.
+- Chronological audit history.
+- SLA countdown and status.
+- Assignment and reassignment controls.
+- Priority management.
+- Status transitions.
+- Resolve and reopen actions.
+
+### Additional interface features
+- Responsive dashboard layout.
+- Reusable status and priority badges.
+- Ticket creation modal.
+- Assignment and reassignment modal.
+- Resolution and reopening forms.
+- Ticket history export.
 
 ## 📡 REST API Reference
 
+Base URL:
+
+```text
+/api
+```
+
 ### Authentication
-- `POST /api/auth/register` — Register a customer account (or create staff if Admin)
-- `POST /api/auth/login` — Login with email/password; returns JWT
-- `GET /api/auth/me` — Get current authenticated profile
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/auth/register` | Register a customer or create staff as Admin |
+| POST | `/auth/login` | Authenticate and receive JWT |
+| GET | `/auth/me` | Retrieve authenticated user profile |
 
 ### Tickets
-- `GET /api/tickets` — List tickets with pagination (`page`, `limit`), search (`search`), filtering (`status`, `priority`, `assignedAgentId`, `customerId`)
-- `POST /api/tickets` — Create ticket (calculates business-hours SLA due dates and appends event)
-- `GET /api/tickets/:id` — Get ticket details (Customer view hides internal notes; Staff view includes all tabs)
-- `GET /api/tickets/:id/sla` — Inspect SLA calculation breakdown, working hours config, pause metrics, and remaining minutes
-- `GET /api/tickets/:id/events` — Retrieve chronological audit history with actor, action, previous/new values, and timestamps
-- `GET /api/tickets/:id/export` — Export ticket history (securely strips internal notes for customers, includes for staff)
-- `POST /api/tickets/:id/messages` — Post public message (customer reply automatically resumes paused SLA clock)
-- `POST /api/tickets/:id/internal-notes` — Post staff-only internal note (`ADMIN`, `AGENT` only)
-- `POST /api/tickets/:id/assign` — Agent takes unassigned ticket (with row locking & 409 conflict handling)
-- `POST /api/tickets/:id/reassign` — Reassign ticket to another agent (`ADMIN` or currently assigned agent only)
-- `POST /api/tickets/:id/release` — Release ticket back to unassigned pool (`ADMIN` or currently assigned agent only)
-- `PATCH /api/tickets/:id/priority` — Update priority and recalculate SLA deadlines (`ADMIN`, `AGENT` only)
-- `PATCH /api/tickets/:id/status` — Update ticket status (`OPEN`, `IN_PROGRESS`, `WAITING_FOR_CUSTOMER`, `RESOLVED`, `CLOSED`) with lifecycle validation
-- `POST /api/tickets/:id/reopen` — Reopen a resolved ticket within 7-calendar-day window (`ADMIN`, `AGENT` only)
-- `POST /api/tickets/admin/auto-close` — Trigger automated scheduled closure for inactive tickets (`ADMIN` only)
 
----
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/tickets` | List tickets with filtering and pagination |
+| POST | `/tickets` | Create a ticket |
+| GET | `/tickets/:id` | Retrieve ticket details |
+| GET | `/tickets/:id/sla` | Retrieve SLA information |
+| GET | `/tickets/:id/events` | Retrieve audit history |
+| GET | `/tickets/:id/export` | Export ticket history |
+| POST | `/tickets/:id/messages` | Add a public message |
+| POST | `/tickets/:id/internal-notes` | Add a private internal note |
+| POST | `/tickets/:id/assign` | Assign an unassigned ticket |
+| POST | `/tickets/:id/reassign` | Reassign a ticket |
+| POST | `/tickets/:id/release` | Release a ticket |
+| PATCH | `/tickets/:id/priority` | Update ticket priority |
+| PATCH | `/tickets/:id/status` | Update ticket status |
+| POST | `/tickets/:id/reopen` | Reopen an eligible resolved ticket |
+| POST | `/tickets/admin/auto-close` | Trigger automatic closure as Admin |
 
-## 🚀 Running Verification & Tests
+### Health check
 
-To execute the automated test suites across the application:
+```http
+GET /api/health
+```
+
+Returns the API status and database connectivity information.
+
+## 🧪 Automated Testing
+
+Run the automated test suites from the project root:
+
 ```bash
 npm test
 ```
-*Runs all **229 automated tests** across four specialized test suites:*
-- **SLA Engine Unit & Boundary Tests (`test-sla.js`):** 30 passed — Working hours boundaries (09:30–18:30 IST), weekends, holiday exclusions, after-hours snapping, multi-day pauses, priority recalculation, and overdue suppression.
-- **API & Concurrency Suite (`test-api.js`):** 137 passed — Full REST API endpoints, ticket assignment row locking (`SELECT FOR UPDATE`), 409 conflict handling, partial unique indexes, status transitions, 7-day reopening window, scheduled auto-close job, and database-level immutable audit trigger verification.
-- **Integration Review Suite (`test-integration-review.js`):** 47 passed — Multi-actor workflow reviews, public message resumption, customer internal note privacy, and edge-case lifecycle validations.
-- **User Provisioning & Security Suite (`test-user-provisioning.js`):** 15 passed — Anonymous customer registration, anonymous admin/agent rejection, authenticated admin role creation, agent/customer privilege escalation defense, invalid token rejection, CLI `create-admin` duplicate protection, and bcrypt hash storage verification.
 
-To run suites individually:
-- `npm run test:sla --prefix server` — Runs the 30 pure SLA calculation tests.
-- `npm run test:api --prefix server` — Runs the 137 API integration and concurrency tests.
-- `npm run test:review --prefix server` — Runs the 47 integration review tests.
-- `npm run test:provisioning --prefix server` — Runs the 15 user provisioning security tests.
+The project includes four specialized test suites:
+
+| Test Suite | Coverage |
+|---|---|
+| `test-sla.js` | SLA calculations, working-hour boundaries, weekends, holidays, and pause/resume |
+| `test-api.js` | API functionality, authorization, ticket assignment, concurrency, and lifecycle |
+| `test-integration-review.js` | Multi-user workflows, customer replies, privacy, and lifecycle edge cases |
+| `test-user-provisioning.js` | Registration, role-based access control, and administrator provisioning |
+
+The previously reported test run contained **229 passing tests** across these suites. Run the latest test command to verify the current result.
+
+Individual test commands:
+
+```bash
+npm run test:sla --prefix server
+npm run test:api --prefix server
+npm run test:review --prefix server
+npm run test:provisioning --prefix server
+```
+
+## 🚀 Production Deployment
+
+Frontdesk uses separate hosting services for its frontend, backend, and database.
+
+### Frontend — Vercel
+- Connected to the GitHub repository.
+- Root directory: `client`.
+- Framework: Vite.
+- Build command: `npm run build`.
+- Output directory: `dist`.
+- Environment variable: `VITE_API_URL`.
+
+### Backend — Render
+- Connected to the GitHub repository.
+- Root directory: `server`.
+- Build command:
+
+```bash
+npm install && npx prisma generate && npx prisma migrate deploy
+```
+
+- Start command:
+
+```bash
+npm start
+```
+
+- Production environment variables include `DATABASE_URL`, `JWT_SECRET`, `NODE_ENV`, `PORT`, and `CLIENT_URL`.
+
+### Database — Supabase
+- PostgreSQL database.
+- Prisma-managed schema and migrations.
+- Production database credentials are stored in hosting environment variables.
+
+Production credentials and environment files are not committed to GitHub.
+
+## 📌 Important Notes
+
+- The application uses separate production hosting for the frontend and backend.
+- Production demo accounts are not created through the development seed script.
+- Customers can register through the backend API, although a public signup page is not currently included in the frontend.
+- Staff account creation is protected by administrator authorization.
+- The production evaluation accounts listed above are provided for testing the deployed application.
+- Render's free service may take some time to respond after a period of inactivity.
+
+## 👨‍💻 Developer
+
+**Parvez Najeeb KV**
+
+B.Tech — Information Technology
+
+GitHub: https://github.com/parvezkv
+
+---
+
+**Project:** Frontdesk — Customer Support Ticket Management System
+
+**Organization:** iNav Technologies Pvt. Ltd.
+  
+**Purpose:** Full Stack Developer Machine Test
