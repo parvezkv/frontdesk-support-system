@@ -227,6 +227,7 @@ Frontdesk incorporates a reusable, backend-enforced SLA engine ([`server/src/ser
 - `POST /api/tickets` — Create ticket (calculates business-hours SLA due dates and appends event)
 - `GET /api/tickets/:id` — Get ticket details (Customer view hides internal notes; Staff view includes all tabs)
 - `GET /api/tickets/:id/sla` — Inspect SLA calculation breakdown, working hours config, pause metrics, and remaining minutes
+- `GET /api/tickets/:id/export` — Export ticket history (securely strips internal notes for customers, includes for staff)
 - `POST /api/tickets/:id/messages` — Post public message (customer reply automatically resumes paused SLA clock)
 - `POST /api/tickets/:id/internal-notes` — Post staff-only internal note (`ADMIN`, `AGENT` only)
 - `POST /api/tickets/:id/assign` — Agent takes unassigned ticket (with row locking & 409 conflict handling)
@@ -243,8 +244,8 @@ To execute the automated SLA calculation tests and full API verification suite:
 ```bash
 npm test
 ```
-*Runs 96 automated tests: 30 SLA engine unit & edge case tests + 66 full API integration & concurrency tests.*
+*Runs 108 automated tests: 30 SLA engine unit & edge case tests + 78 full API integration, concurrency & zero-leakage security tests.*
 
 To run tests individually:
 - `npm run test:sla --prefix server` — Runs the 30 pure SLA calculation tests.
-- `npm run test:api --prefix server` — Runs the 66 API integration and concurrency tests.
+- `npm run test:api --prefix server` — Runs the 78 API integration, concurrency, and security tests.
