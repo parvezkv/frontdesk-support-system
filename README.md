@@ -253,6 +253,55 @@ Frontdesk enforces a strict backend state machine and automated lifecycle engine
 
 ---
 
+## 🖥 Frontend Architecture (React + Tailwind CSS)
+
+Frontdesk features a professional enterprise SaaS dashboard built with **React 18**, **React Router v6**, **Tailwind CSS**, and **Lucide React** icons. The frontend communicates exclusively with the live Express REST API — there is no mock data.
+
+### Design System
+- **Surfaces:** Clean white/light-grey (`bg-slate-50`, `bg-white`).
+- **Sidebar:** Dark navy (`bg-slate-900`) with blue primary actions (`bg-blue-600`).
+- **Borders & Shadows:** Subtle (`border-slate-200`, `shadow-xs`).
+- **Typography:** Clear, professional tables and forms with consistent spacing.
+- **Layout:** Responsive sidebar + header + content layout, scrollable content regions.
+
+### Application Pages & Components
+
+| Path | Component | Description |
+| :--- | :--- | :--- |
+| `/login` | `LoginPage` | Email/password login form with JWT authentication, error validation, and 1-click demo persona quick-switcher buttons (5 seeded accounts). |
+| `/dashboard` | `DashboardPage` | 6 KPI stat cards (Open, In Progress, Waiting for Customer, Overdue, Resolved, Assigned to Me), SLA policy banner, and recent activity feed. Each card is click-to-filter. |
+| `/tickets` | `TicketListPage` | Professional data table with ticket number, subject, customer, priority badge, status badge, assigned agent, first response SLA indicator, resolution SLA indicator, and created date. Includes multi-parameter filtering (status, priority, assigned agent, overdue, waiting for customer), search with debounce, and pagination. |
+| `/tickets/:id` | `TicketDetailPage` | Two-column layout: **Left** — tabbed Customer Conversation, Private Internal Notes (staff only, with warning banner), and Chronological Audit Trail (with database trigger protection badge). **Right** — SLA countdown/overdue status, customer profile, assignment controls (Take / Reassign / Release), status lifecycle transitions, priority change with SLA recalculation, and resolve/reopen actions. |
+
+### Reusable Components
+
+| Component | Purpose |
+| :--- | :--- |
+| `Sidebar` | Dark navy navigation sidebar with logo, nav links, demo persona switcher grid, user badge, and logout. |
+| `Header` | Page title, working hours indicator, and inline persona quick-switcher bar. |
+| `StatusBadge` | Color-coded status pill with icon for `OPEN`, `IN_PROGRESS`, `WAITING_FOR_CUSTOMER`, `RESOLVED`, `CLOSED`. |
+| `PriorityBadge` | Color-coded priority pill with icon for `URGENT`, `HIGH`, `MEDIUM`, `LOW`. |
+| `SLABadge` | Displays SLA status (Met ✅, Due, Overdue 🔴, Paused ⏸) for response and resolution targets. |
+| `CreateTicketModal` | Form with customer selection (or inline new customer creation for staff), subject, priority with SLA targets, and description. |
+| `ReassignModal` | Agent selection dropdown to reassign a ticket. |
+| `ResolveModal` | Mandatory resolution summary form required to mark a ticket RESOLVED. |
+| `ReopenModal` | Optional reason form to reopen a resolved ticket within the 7-day window. |
+| `ExportModal` | JSON preview and download for ticket conversation export. |
+
+### Authentication & State Management
+- **AuthContext** (`context/AuthContext.jsx`): Manages JWT token, user session, `login()`, `logout()`, `switchPersona()` for rapid demo evaluation, and role-based helpers (`isStaff`, `isAdmin`, `isCustomer`).
+- **Protected Routes**: All routes except `/login` require an authenticated session. Unauthenticated users are redirected to the login page.
+- **Axios Interceptor** (`services/api.js`): Automatically attaches the JWT `Authorization` header and clears the session on 401 responses.
+
+### Production Deployment
+In production, the Express server serves the built React client from `client/dist/` with SPA fallback, so both frontend and API run on a single port (`PORT`, default 5000):
+```bash
+npm run build      # Build the React client
+npm start          # Serves API + frontend on port 5000
+```
+
+---
+
 ## 📡 REST API Reference
 
 ### Authentication

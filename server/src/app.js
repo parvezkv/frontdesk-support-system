@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const config = require('./config/env');
 const errorHandler = require('./middlewares/errorHandler');
 const healthRoutes = require('./routes/health.routes');
@@ -23,32 +24,21 @@ app.use('/api', healthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/tickets', ticketRoutes);
 
-// Root route
-app.get('/', (req, res) => {
-  res.json({
-    message: 'Welcome to Frontdesk Support System API',
-    version: '1.0.0',
-    endpoints: {
-      health: 'GET /api/health',
-      auth: {
-        register: 'POST /api/auth/register',
-        login: 'POST /api/auth/login',
-        me: 'GET /api/auth/me',
-      },
-      tickets: {
-        list: 'GET /api/tickets',
-        create: 'POST /api/tickets',
-        detail: 'GET /api/tickets/:id',
-        message: 'POST /api/tickets/:id/messages',
-        internalNote: 'POST /api/tickets/:id/internal-notes',
-        assign: 'PATCH /api/tickets/:id/assign',
-        status: 'PATCH /api/tickets/:id/status',
-      },
-    },
-  });
+// ----- Production: Serve React frontend build -----
+const clientDistPath = path.resolve(__dirname, '../../client/dist');
+app.use(express.static(clientDistPath));
+
+// SPA fallback: any non-API route serves index.html so React Router handles it
+app.get(/^(?!\/api\/).*/, (req, res, next) => {
+  const fs = require('fs');
+  const indexPath = path.join(clientDistPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    return res.sendFile(indexPath);
+  }
+  next();
 });
 
-// 404 handler
+// 404 handler (only for /api routes that didn't match)
 app.use((req, res) => {
   res.status(404).json({
     success: false,

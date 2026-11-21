@@ -157,13 +157,32 @@ async function listTickets(req, res, next) {
     }
 
     // Status filter
-    if (status) {
+    if (status && status !== 'ALL') {
       where.status = status;
     }
 
     // Priority filter
-    if (priority) {
+    if (priority && priority !== 'ALL') {
       where.priority = priority;
+    }
+
+    // Waiting for customer quick-filter
+    if (req.query.waitingForCustomer === 'true') {
+      where.status = { in: ['WAITING_FOR_CUSTOMER', 'PENDING_CUSTOMER'] };
+    }
+
+    const conditions = [];
+
+    // Overdue filter
+    if (req.query.overdue === 'true') {
+      const now = new Date();
+      where.status = { in: ['OPEN', 'IN_PROGRESS'] };
+      conditions.push({
+        OR: [
+          { responseDueAt: { lt: now }, firstResponseAt: null },
+          { resolutionDueAt: { lt: now } },
+        ],
+      });
     }
 
     // Search filter across subject, description, and numeric ticketNumber
@@ -179,7 +198,11 @@ async function listTickets(req, res, next) {
         orConditions.push({ ticketNumber: num });
       }
 
-      where.OR = orConditions;
+      conditions.push({ OR: orConditions });
+    }
+
+    if (conditions.length > 0) {
+      where.AND = conditions;
     }
 
     // Allowed sort fields
@@ -1581,6 +1604,131 @@ async function getTicketEvents(req, res, next) {
   }
 }
 
+/**
+ * Retrieve aggregated dashboard statistics and recent activity
+ */
+async function getDashboardStats(req, res, next) {
+  try {
+    const isCustomer = req.user.role === 'CUSTOMER';
+    const baseWhere = isCustomer ? { customerId: req.user.customerId } : {};
+    const now = new Date();
+
+    const [
+      totalOpen,
+      inProgress,
+      waitingCustomer,
+      resolved,
+      closed,
+      assignedToMe,
+      recentEvents,
+      allActiveTickets,
+    ] = await Promise.all([
+      prisma.ticket.count({ where: { ...baseWhere, status: 'OPEN' } }),
+      prisma.ticket.count({ where: { ...baseWhere, status: 'IN_PROGRESS' } }),
+      prisma.ticket.count({ where: { ...baseWhere, status: { in: ['WAITING_FOR_CUSTOMER', 'PENDING_CUSTOMER'] } } }),
+      prisma.ticket.count({ where: { ...baseWhere, status: 'RESOLVED' } }),
+      prisma.ticket.count({ where: { ...baseWhere, status: 'CLOSED' } }),
+      isCustomer
+        ? Promise.resolve(0)
+        : prisma.ticket.count({
+            where: {
+              assignedAgentId: req.user.id,
+              status: { notIn: ['RESOLVED', 'CLOSED'] },
+            },
+          }),
+      prisma.ticketEvent.findMany({
+        where: isCustomer ? { ticket: { customerId: req.user.customerId } } : {},
+        orderBy: { createdAt: 'desc' },
+        take: 8,
+        include: {
+          actor: { select: { id: true, name: true, role: true } },
+          ticket: { select: { id: true, ticketNumber: true, subject: true, status: true, priority: true } },
+        },
+      }),
+      // Active tickets to evaluate SLA overdue status
+      prisma.ticket.findMany({
+        where: {
+          ...baseWhere,
+          status: { in: ['OPEN', 'IN_PROGRESS'] },
+        },
+        select: {
+          id: true,
+          status: true,
+          firstResponseAt: true,
+          responseDueAt: true,
+          resolutionDueAt: true,
+        },
+      }),
+    ]);
+
+    // Fetch configured holidays
+    const holidays = await prisma.holiday.findMany();
+
+    // Check overdue status using SLA service rules (Rule 8: suppressed on weekends/outside working hours/holidays)
+    let overdueCount = 0;
+    const isWorkingHoursNow = slaService.isWorkingTime(now, holidays);
+
+    if (isWorkingHoursNow) {
+      for (const t of allActiveTickets) {
+        const isResponseOverdue = !t.firstResponseAt && t.responseDueAt && new Date(t.responseDueAt) < now;
+        const isResolutionOverdue = t.resolutionDueAt && new Date(t.resolutionDueAt) < now;
+        if (isResponseOverdue || isResolutionOverdue) {
+          overdueCount++;
+        }
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      stats: {
+        totalOpen,
+        inProgress,
+        waitingCustomer,
+        overdue: overdueCount,
+        resolved,
+        closed,
+        assignedToMe,
+        total: totalOpen + inProgress + waitingCustomer + resolved + closed,
+        isWorkingHours: isWorkingHoursNow,
+      },
+      recentActivity: recentEvents.map((e) => withISTDisplay(e)),
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * List available support agents and admins
+ */
+async function getAgentsList(req, res, next) {
+  try {
+    const agents = await prisma.user.findMany({
+      where: { role: { in: ['ADMIN', 'AGENT'] } },
+      select: { id: true, name: true, email: true, role: true },
+      orderBy: { name: 'asc' },
+    });
+    res.status(200).json({ success: true, agents });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * List existing customers for ticket creation
+ */
+async function getCustomersList(req, res, next) {
+  try {
+    const customers = await prisma.customer.findMany({
+      select: { id: true, name: true, email: true, phone: true },
+      orderBy: { name: 'asc' },
+    });
+    res.status(200).json({ success: true, customers });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   createTicket,
   listTickets,
@@ -1597,4 +1745,7 @@ module.exports = {
   reopenTicket,
   runAutoClosure,
   getTicketEvents,
+  getDashboardStats,
+  getAgentsList,
+  getCustomersList,
 };

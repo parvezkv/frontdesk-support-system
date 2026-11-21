@@ -20,6 +20,11 @@ router.route('/')
   .post(validateCreateTicket, ticketController.createTicket)
   .get(ticketController.listTickets);
 
+// 1b. Static Metadata & Dashboard Endpoints (Must be registered before /:id)
+router.get('/stats', ticketController.getDashboardStats);
+router.get('/agents', ticketController.getAgentsList);
+router.get('/customers', ticketController.getCustomersList);
+
 // 2. Ticket Detail Retrieval & Export
 router.route('/:id')
   .get(ticketController.getTicketById);
