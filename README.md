@@ -49,11 +49,16 @@ frontdesk-support-system/
     ├── .env.example             # Backend environment variable template
     ├── .env                     # Local backend environment variables (git-ignored)
     ├── package.json             # Backend dependencies & Prisma scripts
+    ├── test-sla.js              # SLA engine unit and boundary test suite
     ├── test-api.js              # Comprehensive automated API verification suite
+    ├── test-integration-review.js # Full lifecycle and integration review test suite
+    ├── test-user-provisioning.js # User provisioning and RBAC registration test suite
+    ├── scripts/
+    │   └── create-admin.js      # Production initial Administrator provisioning CLI script
     ├── prisma/
     │   ├── schema.prisma        # Prisma PostgreSQL schema definition & enums
     │   ├── migrations/          # Git-tracked SQL migration files
-    │   └── seed.js              # Database seed script for roles, users, holidays, tickets
+    │   └── seed.js              # Database seed script for roles, users, holidays, tickets (dev-only)
     └── src/
         ├── app.js               # Express app setup, CORS, JSON parsers, routes
         ├── server.js            # HTTP server startup & graceful shutdown handlers
@@ -88,8 +93,10 @@ frontdesk-support-system/
 | `PORT` | Port for Express API server | `5000` |
 | `NODE_ENV` | Application environment (`development` / `production`) | `development` |
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql://postgres:1234@localhost:5432/frontdesk_db?schema=public` |
-| `JWT_SECRET` | Secret key for signing and verifying JWT tokens | `frontdesk_jwt_secret_token_inav_tech_placement_2026` |
+| `JWT_SECRET` | Secret key for signing and verifying JWT tokens (development-only default; production requires a strong, random secret) | `frontdesk_jwt_secret_token_inav_tech_placement_2026` |
 | `CLIENT_URL` | Allowed origin for Cross-Origin Resource Sharing (CORS) | `http://localhost:5173` |
+
+> ⚠️ **Production Security Notice:** The default `JWT_SECRET` above is provided solely for local development convenience. Production deployments must configure a unique, high-entropy random secret (e.g., generated with `openssl rand -hex 32`).
 
 ### Frontend (`client/.env`)
 | Variable | Description | Default / Example |
@@ -98,17 +105,30 @@ frontdesk-support-system/
 
 ---
 
-## 🔑 Demo Credentials
+## 🔑 User Roles & Production Provisioning
 
-All test accounts use the default password: **`password123`**
+Frontdesk implements role-based access control across three user roles: `ADMIN`, `AGENT`, and `CUSTOMER`.
 
-| Role | Name | Email | Description |
-| :--- | :--- | :--- | :--- |
-| **ADMIN** | System Administrator | `admin@frontdesk.com` | Full administrative privileges, user management, and reassignment |
-| **AGENT** | Sarah Connor | `agent.sarah@frontdesk.com` | Support agent handling tickets, internal notes, and status updates |
-| **AGENT** | Alex Murphy | `agent.alex@frontdesk.com` | Support agent handling tickets, internal notes, and status updates |
-| **CUSTOMER** | John Doe | `john.doe@example.com` | Customer managing authored tickets (#6, #8) |
-| **CUSTOMER** | Jane Smith | `jane.smith@example.com` | Customer managing authored tickets (#7) |
+### Development Evaluation
+- In local development (`NODE_ENV=development`), the application provides 1-click demo persona quick-switcher buttons in the login page, sidebar, and header for rapid multi-role evaluation across Admin, Agent, and Customer accounts.
+- Database demo seeding (`npm run db:seed --prefix server`) is available **strictly in development** to populate initial sample tickets and evaluation personas.
+
+### Production Provisioning & Security
+- **Production Seed Protection:** The database seed script (`server/prisma/seed.js`) is strictly **blocked** when `NODE_ENV=production`. Running the seed command in production halts immediately with an error to prevent inserting default accounts or overwriting data.
+- **Initial Administrator Provisioning:** In a fresh production deployment where no users exist, the initial Administrator account is created using the dedicated server CLI script:
+  ```bash
+  ADMIN_EMAIL="admin@yourdomain.com" ADMIN_NAME="System Administrator" ADMIN_PASSWORD="<StrongSecurePassword>" npm run create-admin --prefix server
+  ```
+  *(or `node server/scripts/create-admin.js` with environment variables)*.
+  - **Required Environment Variables:**
+    - `ADMIN_EMAIL` — Valid administrator email address.
+    - `ADMIN_NAME` — Administrator display name (minimum 2 characters).
+    - `ADMIN_PASSWORD` — Administrator password (minimum 6 characters).
+  - **Security Best Practice:** Passwords must be passed through environment variables rather than command-line arguments to prevent exposure in process listings (`ps`) or shell history.
+  - **Duplicate Account Protection:** If an account with the specified email already exists, the script fails safely with a non-zero exit code without altering the existing user or password. Passwords are saved as standard bcrypt hashes.
+- **Agent Account Creation:** Once the initial Administrator logs in, they can create `AGENT` (or additional `ADMIN`) accounts via the authenticated `POST /api/auth/register` API endpoint by passing their Bearer JWT. Anonymous attempts to create `AGENT` or `ADMIN` roles return `403 Forbidden`.
+- **Customer Account Creation:** Customers can self-register at any time using the public `POST /api/auth/register` endpoint (which defaults to the `CUSTOMER` role), or support staff can create customer records during ticket submission.
+- **Demo Switcher Exclusion:** Demo persona switching controls, demo account lists, and default passwords are completely stripped and dead-code eliminated from production frontend builds (`import.meta.env.DEV`).
 
 ---
 
@@ -268,7 +288,7 @@ Frontdesk features a professional enterprise SaaS dashboard built with **React 1
 
 | Path | Component | Description |
 | :--- | :--- | :--- |
-| `/login` | `LoginPage` | Email/password login form with JWT authentication, error validation, and 1-click demo persona quick-switcher buttons (5 seeded accounts). |
+| `/login` | `LoginPage` | Email/password login form with JWT authentication, error validation, and 1-click demo persona quick-switcher buttons (development only; hidden and disabled in production). |
 | `/dashboard` | `DashboardPage` | 6 KPI stat cards (Open, In Progress, Waiting for Customer, Overdue, Resolved, Assigned to Me), SLA policy banner, and recent activity feed. Each card is click-to-filter. |
 | `/tickets` | `TicketListPage` | Professional data table with ticket number, subject, customer, priority badge, status badge, assigned agent, first response SLA indicator, resolution SLA indicator, and created date. Includes multi-parameter filtering (status, priority, assigned agent, overdue, waiting for customer), search with debounce, and pagination. |
 | `/tickets/:id` | `TicketDetailPage` | Two-column layout: **Left** — tabbed Customer Conversation, Private Internal Notes (staff only, with warning banner), and Chronological Audit Trail (with database trigger protection badge). **Right** — SLA countdown/overdue status, customer profile, assignment controls (Take / Reassign / Release), status lifecycle transitions, priority change with SLA recalculation, and resolve/reopen actions. |
@@ -277,8 +297,8 @@ Frontdesk features a professional enterprise SaaS dashboard built with **React 1
 
 | Component | Purpose |
 | :--- | :--- |
-| `Sidebar` | Dark navy navigation sidebar with logo, nav links, demo persona switcher grid, user badge, and logout. |
-| `Header` | Page title, working hours indicator, and inline persona quick-switcher bar. |
+| `Sidebar` | Dark navy navigation sidebar with logo, nav links, demo persona switcher grid (development only), user badge, and logout. |
+| `Header` | Page title, working hours indicator, and inline persona quick-switcher bar (development only). |
 | `StatusBadge` | Color-coded status pill with icon for `OPEN`, `IN_PROGRESS`, `WAITING_FOR_CUSTOMER`, `RESOLVED`, `CLOSED`. |
 | `PriorityBadge` | Color-coded priority pill with icon for `URGENT`, `HIGH`, `MEDIUM`, `LOW`. |
 | `SLABadge` | Displays SLA status (Met ✅, Due, Overdue 🔴, Paused ⏸) for response and resolution targets. |
@@ -289,7 +309,7 @@ Frontdesk features a professional enterprise SaaS dashboard built with **React 1
 | `ExportModal` | JSON preview and download for ticket conversation export. |
 
 ### Authentication & State Management
-- **AuthContext** (`context/AuthContext.jsx`): Manages JWT token, user session, `login()`, `logout()`, `switchPersona()` for rapid demo evaluation, and role-based helpers (`isStaff`, `isAdmin`, `isCustomer`).
+- **AuthContext** (`context/AuthContext.jsx`): Manages JWT token, user session, `login()`, `logout()`, `switchPersona()` for rapid development evaluation (disabled in production), and role-based helpers (`isStaff`, `isAdmin`, `isCustomer`).
 - **Protected Routes**: All routes except `/login` require an authenticated session. Unauthenticated users are redirected to the login page.
 - **Axios Interceptor** (`services/api.js`): Automatically attaches the JWT `Authorization` header and clears the session on 401 responses.
 
@@ -330,12 +350,18 @@ npm start          # Serves API + frontend on port 5000
 
 ## 🚀 Running Verification & Tests
 
-To execute the automated SLA calculation tests and full API verification suite:
+To execute the automated test suites across the application:
 ```bash
 npm test
 ```
-*Runs 137 automated tests: 30 SLA engine unit & edge case tests + 107 full API integration, concurrency, lifecycle, reopening, system auto-close, and database trigger immutability tests.*
+*Runs all **229 automated tests** across four specialized test suites:*
+- **SLA Engine Unit & Boundary Tests (`test-sla.js`):** 30 passed — Working hours boundaries (09:30–18:30 IST), weekends, holiday exclusions, after-hours snapping, multi-day pauses, priority recalculation, and overdue suppression.
+- **API & Concurrency Suite (`test-api.js`):** 137 passed — Full REST API endpoints, ticket assignment row locking (`SELECT FOR UPDATE`), 409 conflict handling, partial unique indexes, status transitions, 7-day reopening window, scheduled auto-close job, and database-level immutable audit trigger verification.
+- **Integration Review Suite (`test-integration-review.js`):** 47 passed — Multi-actor workflow reviews, public message resumption, customer internal note privacy, and edge-case lifecycle validations.
+- **User Provisioning & Security Suite (`test-user-provisioning.js`):** 15 passed — Anonymous customer registration, anonymous admin/agent rejection, authenticated admin role creation, agent/customer privilege escalation defense, invalid token rejection, CLI `create-admin` duplicate protection, and bcrypt hash storage verification.
 
-To run tests individually:
+To run suites individually:
 - `npm run test:sla --prefix server` — Runs the 30 pure SLA calculation tests.
-- `npm run test:api --prefix server` — Runs the 107 API integration, concurrency, lifecycle, and audit immutability tests.
+- `npm run test:api --prefix server` — Runs the 137 API integration and concurrency tests.
+- `npm run test:review --prefix server` — Runs the 47 integration review tests.
+- `npm run test:provisioning --prefix server` — Runs the 15 user provisioning security tests.
