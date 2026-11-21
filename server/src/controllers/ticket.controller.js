@@ -1238,10 +1238,112 @@ async function getTicketSLA(req, res, next) {
   }
 }
 
+/**
+ * Export ticket data (Rule: Never include internal notes in customer-facing exports!)
+ */
+async function exportTicket(req, res, next) {
+  try {
+    const { id } = req.params;
+    const isNum = !isNaN(parseInt(id)) && /^\d+$/.test(id);
+    const where = isNum ? { ticketNumber: parseInt(id) } : { id };
+
+    const isCustomer = req.user.role === 'CUSTOMER';
+
+    const ticket = await prisma.ticket.findUnique({
+      where,
+      include: {
+        customer: { select: { id: true, name: true, email: true } },
+        assignedAgent: { select: { id: true, name: true, email: !isCustomer } },
+        messages: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            content: true,
+            createdAt: true,
+            sender: { select: { id: true, name: true, role: true } },
+          },
+        },
+        // 🔒 Internal notes are strictly excluded when requester is a Customer
+        ...(!isCustomer && {
+          internalNotes: {
+            orderBy: { createdAt: 'asc' },
+            select: {
+              id: true,
+              content: true,
+              createdAt: true,
+              author: { select: { id: true, name: true, role: true } },
+            },
+          },
+        }),
+      },
+    });
+
+    if (!ticket) {
+      return res.status(404).json({
+        success: false,
+        message: 'Ticket not found.',
+      });
+    }
+
+    if (isCustomer && ticket.customerId !== req.user.customerId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: You do not have permission to export this ticket.',
+      });
+    }
+
+    const formatted = formatTicket(ticket);
+
+    const exportData = {
+      exportType: isCustomer ? 'CUSTOMER_PORTAL_TRANSCRIPT' : 'STAFF_FULL_AUDIT_EXPORT',
+      exportedAt: new Date().toISOString(),
+      exportedBy: {
+        name: req.user.name,
+        role: req.user.role,
+      },
+      ticket: {
+        ticketNumber: formatted.ticketNumber,
+        subject: formatted.subject,
+        description: formatted.description,
+        status: formatted.status,
+        priority: formatted.priority,
+        createdAt: formatted.createdAt,
+        createdAtIST: formatted.createdAtIST,
+        resolvedAt: formatted.resolvedAt,
+        resolvedAtIST: formatted.resolvedAtIST,
+        customer: formatted.customer,
+        assignedAgent: formatted.assignedAgent ? { name: formatted.assignedAgent.name } : null,
+      },
+      conversation: formatted.messages.map((m) => ({
+        sender: m.sender ? m.sender.name : 'Unknown',
+        role: m.sender ? m.sender.role : 'USER',
+        timestamp: m.createdAtIST,
+        message: m.content,
+      })),
+      // 🔒 Internal notes included ONLY if requester is staff
+      ...(!isCustomer && {
+        internalNotes: formatted.internalNotes.map((n) => ({
+          author: n.author ? n.author.name : 'Staff',
+          timestamp: n.createdAtIST,
+          note: n.content,
+        })),
+      }),
+    };
+
+    res.status(200).json({
+      success: true,
+      export: exportData,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   createTicket,
   listTickets,
   getTicketById,
+  exportTicket,
   addMessage,
   addInternalNote,
   assignTicket,

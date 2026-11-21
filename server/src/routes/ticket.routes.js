@@ -20,9 +20,12 @@ router.route('/')
   .post(validateCreateTicket, ticketController.createTicket)
   .get(ticketController.listTickets);
 
-// 2. Ticket Detail Retrieval
+// 2. Ticket Detail Retrieval & Export
 router.route('/:id')
   .get(ticketController.getTicketById);
+
+router.route('/:id/export')
+  .get(ticketController.exportTicket);
 
 // 3. Public Messages (Customer & Staff)
 router.route('/:id/messages')

@@ -164,13 +164,21 @@ async function runTests() {
     });
     assert(otherCustomerDetail.status === 403, 'RBAC: Customer receives 403 when trying to access another customer ticket');
 
-    // 12. Public Message Creation
+    // 12. Public Message Creation & Sender Identity Spoofing Protection
     const messageRes = await request(`/api/tickets/${newTicketId}/messages`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${customerToken}` },
-      body: { content: 'Attaching server log traces showing the exact 429 response body.' },
+      body: {
+        content: 'Attaching server log traces showing the exact 429 response body.',
+        senderId: 'hacked-agent-id', // Client tries to spoof sender identity
+      },
     });
     assert(messageRes.status === 201 && messageRes.data.data.content, 'Customer can post public messages on their ticket');
+    assert(
+      messageRes.data.data.sender.id === customerLogin.data.user.id,
+      'Security: Server uses authenticated user identity, ignoring spoofed client senderId'
+    );
+    assert(messageRes.data.data.sender.role === 'CUSTOMER', 'Sender role correctly reflects authenticated CUSTOMER');
 
     // 13. Internal Note Creation: Customer blocked (403), Agent allowed (201)
     const custNoteRes = await request(`/api/tickets/${newTicketId}/internal-notes`, {
@@ -183,9 +191,45 @@ async function runTests() {
     const agentNoteRes = await request(`/api/tickets/${newTicketId}/internal-notes`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${agent1Token}` },
-      body: { content: 'Verified tier limits. Tier was set to Starter instead of Enterprise.' },
+      body: { content: 'SECRET_AGENT_NOTE: Tier was set to Starter instead of Enterprise.' },
     });
     assert(agentNoteRes.status === 201, 'Agent can post internal notes');
+
+    // 13b. Strict Leakage Prevention Tests: Customer cannot see internal note anywhere
+    console.log('    Verifying internal notes cannot leak through detail, list, or export...');
+    const custDetailCheck = await request(`/api/tickets/${newTicketId}`, {
+      headers: { Authorization: `Bearer ${customerToken}` },
+    });
+    assert(custDetailCheck.data.ticket.internalNotes === undefined, 'Leak Check 1: Customer detail response strictly omits internalNotes');
+    const noteFoundInMessages = custDetailCheck.data.ticket.messages.some((m) => m.content.includes('SECRET_AGENT_NOTE'));
+    assert(!noteFoundInMessages, 'Leak Check 2: Internal notes are never mixed into customer messages conversation');
+
+    // Customer Export Leak Check
+    const custExportCheck = await request(`/api/tickets/${newTicketId}/export`, {
+      headers: { Authorization: `Bearer ${customerToken}` },
+    });
+    assert(custExportCheck.status === 200, 'Customer can export their ticket conversation');
+    assert(custExportCheck.data.export.internalNotes === undefined, 'Leak Check 3: Customer export strictly omits internalNotes');
+    const noteFoundInExportConv = custExportCheck.data.export.conversation.some((c) => c.message.includes('SECRET_AGENT_NOTE'));
+    assert(!noteFoundInExportConv, 'Leak Check 4: Internal notes never appear in customer export conversation');
+
+    // Staff Export Check
+    const staffExportCheck = await request(`/api/tickets/${newTicketId}/export`, {
+      headers: { Authorization: `Bearer ${agent1Token}` },
+    });
+    assert(staffExportCheck.status === 200, 'Staff can export full ticket audit');
+    assert(Array.isArray(staffExportCheck.data.export.internalNotes), 'Staff export correctly includes internalNotes in distinct section');
+    assert(staffExportCheck.data.export.internalNotes[0].note.includes('SECRET_AGENT_NOTE'), 'Staff export contains internal note content');
+
+    // Audit Event Leak Check: event does NOT leak private note content in newValue
+    const noteAuditEvents = await prisma.ticketEvent.findMany({
+      where: { ticketId: newTicketId, eventType: 'INTERNAL_NOTE_ADDED' },
+    });
+    assert(noteAuditEvents.length > 0, 'Audit trail recorded INTERNAL_NOTE_ADDED');
+    assert(
+      !noteAuditEvents.some((e) => e.newValue?.includes('SECRET_AGENT_NOTE')),
+      'Leak Check 5: Internal note content is NEVER stored or leaked in TicketEvent audit summary'
+    );
 
     // --------------------------------------------------------------------------
     // CONCURRENCY & OWNERSHIP RULES TESTS
