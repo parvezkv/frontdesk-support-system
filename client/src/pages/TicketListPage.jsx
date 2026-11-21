@@ -317,11 +317,18 @@ export default function TicketListPage({ onOpenNewTicket }) {
                         isTicketOverdue ? 'bg-rose-50/30' : ''
                       }`}
                     >
-                      {/* Ticket Number */}
+                      {/* Ticket Number & Overdue Indicator */}
                       <td className="py-3 px-4 whitespace-nowrap">
-                        <span className="font-bold text-slate-900 group-hover:text-blue-600 font-mono">
-                          #{t.ticketNumber}
-                        </span>
+                        <div className="flex items-center space-x-1.5">
+                          <span className="font-bold text-slate-900 group-hover:text-blue-600 font-mono">
+                            #{t.ticketNumber}
+                          </span>
+                          {isTicketOverdue && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-rose-100 text-rose-700 border border-rose-300">
+                              OVERDUE
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Subject */}

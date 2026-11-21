@@ -68,12 +68,12 @@ export default function TicketDetailPage() {
       setLoading(true);
       const [ticketRes, slaRes] = await Promise.all([
         api.get(`/tickets/${id}`),
-        api.get(`/tickets/${id}/sla`).catch(() => ({ data: { sla: null } })),
+        api.get(`/tickets/${id}/sla`).catch(() => ({ data: { data: null } })),
       ]);
 
       const t = ticketRes.data.ticket;
       setTicket(t);
-      setSlaData(slaRes.data.sla);
+      setSlaData(slaRes.data.data);
 
       // If staff, also load chronological audit events
       if (isStaff) {
@@ -664,21 +664,57 @@ export default function TicketDetailPage() {
                 </div>
               </div>
 
-              {/* Remaining Time from SLA Service */}
-              {slaData && !isTerminal && !isResolved && (
-                <div className="pt-2 border-t border-slate-100 space-y-1.5">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-slate-500">Remaining Working Time:</span>
-                    <span className="font-mono font-bold text-slate-800">
-                      {slaData.resolutionRemainingWorkingMinutes} min (~{(slaData.resolutionRemainingWorkingMinutes / 60).toFixed(1)} hrs)
-                    </span>
+              {/* Overdue Alert */}
+              {slaData?.evaluation?.overdueStatus?.isAnyOverdue && !isResolved && !isTerminal && (
+                <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center space-x-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                  <div>
+                    <span className="font-bold">SLA Target Breached</span>
+                    <p className="text-[10px] text-rose-700 mt-0.5">{slaData.evaluation.overdueStatus.note || 'Overdue during working hours'}</p>
                   </div>
-                  {slaData.totalPausedWorkingMinutes > 0 && (
-                    <div className="flex items-center justify-between text-[11px] text-purple-700">
-                      <span>Total Paused Minutes:</span>
-                      <span className="font-mono font-bold">{slaData.totalPausedWorkingMinutes} min</span>
+                </div>
+              )}
+
+              {/* Detailed Breakdown from SLA Service */}
+              {slaData && !isTerminal && !isResolved && (
+                <div className="pt-2 border-t border-slate-100 space-y-2">
+                  {!ticket.firstResponseAt && slaData.evaluation?.remainingResponseWorkingMinutes !== undefined && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-500">Response Remaining:</span>
+                      <span className={`font-mono font-bold ${slaData.evaluation.remainingResponseWorkingMinutes < 0 ? 'text-rose-600' : 'text-slate-800'}`}>
+                        {slaData.evaluation.remainingResponseWorkingMinutes < 0
+                          ? `${Math.abs(slaData.evaluation.remainingResponseWorkingMinutes)} min overdue`
+                          : `${slaData.evaluation.remainingResponseWorkingMinutes} working min`}
+                      </span>
                     </div>
                   )}
+
+                  {slaData.evaluation?.remainingResolutionWorkingMinutes !== undefined && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-500">Resolution Remaining:</span>
+                      <span className={`font-mono font-bold ${slaData.evaluation.remainingResolutionWorkingMinutes < 0 ? 'text-rose-600' : 'text-slate-800'}`}>
+                        {slaData.evaluation.remainingResolutionWorkingMinutes < 0
+                          ? `${Math.abs(slaData.evaluation.remainingResolutionWorkingMinutes)} min overdue`
+                          : `${slaData.evaluation.remainingResolutionWorkingMinutes} working min (~${(slaData.evaluation.remainingResolutionWorkingMinutes / 60).toFixed(1)}h)`}
+                      </span>
+                    </div>
+                  )}
+
+                  {(slaData.pauseMetrics?.totalPausedWorkingMinutes > 0 || isWaitingCustomer) && (
+                    <div className="flex items-center justify-between text-[11px] text-purple-700">
+                      <span>Total Paused Duration:</span>
+                      <span className="font-mono font-bold">
+                        {slaData.pauseMetrics?.totalPausedWorkingMinutes || 0} working min
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-50">
+                    <span>Engine Status:</span>
+                    <span className="font-medium text-slate-600">
+                      {slaData.evaluation?.isCurrentlyWorkingTime ? '● Active (Working Hours)' : '○ Paused (Off Hours/Weekend)'}
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
