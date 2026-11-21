@@ -6,9 +6,10 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "node test-sla.js && node test-api.js",
+    "test": "node test-sla.js && node test-api.js && node test-integration-review.js",
     "test:sla": "node test-sla.js",
     "test:api": "node test-api.js",
+    "test:review": "node test-integration-review.js",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
