@@ -8,15 +8,13 @@ import {
   UserCheck,
   PlusCircle,
   LogOut,
-  Shield,
   Headphones,
-  User,
   Users
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function Sidebar({ onOpenNewTicket }) {
-  const { user, isStaff, isAdmin, logout, switchPersona, DEMO_PERSONAS } = useAuth();
+  const { user, isStaff, logout, switchPersona, DEMO_PERSONAS } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -99,34 +97,36 @@ export default function Sidebar({ onOpenNewTicket }) {
       </div>
 
       {/* Demo Persona Switcher Footer */}
-      <div className="p-3 border-t border-slate-800/80 bg-slate-950/40 space-y-2">
-        <div className="flex items-center justify-between px-1">
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider flex items-center space-x-1">
-            <Users className="w-3 h-3 text-slate-400" />
-            <span>Switch Persona</span>
-          </span>
-        </div>
+      {import.meta.env.DEV && (
+        <div className="p-3 border-t border-slate-800/80 bg-slate-950/40 space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider flex items-center space-x-1">
+              <Users className="w-3 h-3 text-slate-400" />
+              <span>Switch Persona</span>
+            </span>
+          </div>
 
-        <div className="grid grid-cols-2 gap-1.5">
-          {DEMO_PERSONAS.map((p) => {
-            const isActive = user?.email === p.email;
-            return (
-              <button
-                key={p.email}
-                onClick={() => switchPersona(p)}
-                className={`px-2 py-1 text-[11px] rounded text-left font-medium truncate transition-colors ${
-                  isActive
-                    ? 'bg-blue-600 text-white font-semibold'
-                    : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-                title={`${p.name} (${p.role})`}
-              >
-                {p.label}
-              </button>
-            );
-          })}
+          <div className="grid grid-cols-2 gap-1.5">
+            {DEMO_PERSONAS.map((p) => {
+              const isActive = user?.email === p.email;
+              return (
+                <button
+                  key={p.email}
+                  onClick={() => switchPersona(p)}
+                  className={`px-2 py-1 text-[11px] rounded text-left font-medium truncate transition-colors ${
+                    isActive
+                      ? 'bg-blue-600 text-white font-semibold'
+                      : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                  title={`${p.name} (${p.role})`}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Current User & Logout Section */}
       <div className="p-3.5 border-t border-slate-800 flex items-center justify-between bg-slate-950/60">

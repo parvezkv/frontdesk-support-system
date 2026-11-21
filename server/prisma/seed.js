@@ -4,6 +4,11 @@ const bcrypt = require('bcryptjs');
 const prisma = new PrismaClient();
 
 async function main() {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('❌ Error: Database seeding with default demo accounts is disabled in production (NODE_ENV=production).');
+    process.exit(1);
+  }
+
   console.log('🌱 Starting comprehensive database seeding...');
 
   // Allow administrative reset of immutable audit events for seeding

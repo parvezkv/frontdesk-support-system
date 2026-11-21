@@ -4,7 +4,7 @@ import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 export default function CreateTicketModal({ isOpen, onClose, onSuccess }) {
-  const { user, isStaff } = useAuth();
+  const { isStaff } = useAuth();
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState('MEDIUM');

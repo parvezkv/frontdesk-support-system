@@ -10,14 +10,10 @@ import {
   ArrowRight,
   PlusCircle,
   Activity,
-  Calendar,
-  ShieldCheck,
-  ExternalLink
+  ShieldCheck
 } from 'lucide-react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import PriorityBadge from '../components/PriorityBadge';
-import StatusBadge from '../components/StatusBadge';
 
 export default function DashboardPage({ onOpenNewTicket }) {
   const { user, isStaff } = useAuth();

@@ -75,6 +75,91 @@ async function authenticate(req, res, next) {
 }
 
 /**
+ * Optional Authentication Middleware:
+ * - No Bearer token: continue as an unauthenticated request (req.user = null).
+ * - Valid Bearer token: verify JWT and load the authenticated user into req.user.
+ * - Invalid, malformed or expired Bearer token: return 401.
+ */
+async function optionalAuthenticate(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      req.user = null;
+      return next();
+    }
+
+    if (!authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid authorization format. Expected Bearer token.',
+      });
+    }
+
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid authorization format. Token missing.',
+      });
+    }
+
+    let decoded;
+    try {
+      decoded = verifyToken(token);
+    } catch (err) {
+      if (err.name === 'TokenExpiredError') {
+        return res.status(401).json({
+          success: false,
+          message: 'Token has expired. Please log in again.',
+        });
+      }
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid authentication token.',
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true,
+        customer: {
+          select: {
+            id: true,
+            phone: true,
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'User belonging to this token no longer exists.',
+      });
+    }
+
+    req.user = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      createdAt: user.createdAt,
+      customerId: user.customer?.id || null,
+      customerPhone: user.customer?.phone || null,
+    };
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
  * Role-Based Access Control (RBAC) Guard Middleware
  * Restricts endpoint to specified roles (e.g., 'ADMIN', 'AGENT')
  */
@@ -100,5 +185,6 @@ function authorize(...roles) {
 
 module.exports = {
   authenticate,
+  optionalAuthenticate,
   authorize,
 };

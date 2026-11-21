@@ -3,13 +3,13 @@ import api from '../services/api';
 
 const AuthContext = createContext(null);
 
-export const DEMO_PERSONAS = [
+export const DEMO_PERSONAS = import.meta.env.DEV ? [
   { label: 'Admin', email: 'admin@frontdesk.com', role: 'ADMIN', name: 'System Administrator' },
   { label: 'Agent Sarah', email: 'agent.sarah@frontdesk.com', role: 'AGENT', name: 'Sarah Connor' },
   { label: 'Agent Alex', email: 'agent.alex@frontdesk.com', role: 'AGENT', name: 'Alex Murphy' },
   { label: 'Customer John', email: 'john.doe@example.com', role: 'CUSTOMER', name: 'John Doe' },
   { label: 'Customer Jane', email: 'jane.smith@example.com', role: 'CUSTOMER', name: 'Jane Smith' },
-];
+] : [];
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -60,11 +60,15 @@ export function AuthProvider({ children }) {
 
   // Quick switch persona for evaluation & demo testing
   const switchPersona = async (persona) => {
+    if (!import.meta.env.DEV) {
+      return { success: false, error: 'Demo persona switching is disabled in production.' };
+    }
     setAuthError(null);
     try {
+      const demoPassword = import.meta.env.DEV ? 'password123' : '';
       const res = await api.post('/auth/login', {
         email: persona.email,
-        password: 'password123',
+        password: demoPassword,
       });
       const { token: newToken, user: newUser } = res.data;
       localStorage.setItem('frontdesk_token', newToken);

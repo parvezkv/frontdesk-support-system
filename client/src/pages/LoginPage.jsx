@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Headphones, Lock, Mail, AlertCircle, ArrowRight, ShieldCheck, User } from 'lucide-react';
+import { Headphones, Lock, Mail, AlertCircle, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function LoginPage() {
@@ -109,30 +109,32 @@ export default function LoginPage() {
           </form>
 
           {/* Quick Demo Personas */}
-          <div className="mt-6 pt-5 border-t border-slate-100">
-            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2.5">
-              1-Click Demo Evaluation Profiles
-            </p>
-            <div className="space-y-1.5">
-              {DEMO_PERSONAS.map((p) => (
-                <button
-                  key={p.email}
-                  type="button"
-                  onClick={() => handleDemoClick(p)}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 text-left transition-all text-xs"
-                >
-                  <div className="flex items-center space-x-2.5">
-                    <span className={`w-2 h-2 rounded-full ${
-                      p.role === 'ADMIN' ? 'bg-purple-500' : p.role === 'AGENT' ? 'bg-blue-500' : 'bg-emerald-500'
-                    }`} />
-                    <span className="font-semibold text-slate-800">{p.name}</span>
-                    <span className="text-[10px] text-slate-400 font-mono">({p.role})</span>
-                  </div>
-                  <span className="text-[11px] text-blue-600 font-medium">Login →</span>
-                </button>
-              ))}
+          {import.meta.env.DEV && (
+            <div className="mt-6 pt-5 border-t border-slate-100">
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2.5">
+                1-Click Demo Evaluation Profiles
+              </p>
+              <div className="space-y-1.5">
+                {DEMO_PERSONAS.map((p) => (
+                  <button
+                    key={p.email}
+                    type="button"
+                    onClick={() => handleDemoClick(p)}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 text-left transition-all text-xs"
+                  >
+                    <div className="flex items-center space-x-2.5">
+                      <span className={`w-2 h-2 rounded-full ${
+                        p.role === 'ADMIN' ? 'bg-purple-500' : p.role === 'AGENT' ? 'bg-blue-500' : 'bg-emerald-500'
+                      }`} />
+                      <span className="font-semibold text-slate-800">{p.name}</span>
+                      <span className="text-[10px] text-slate-400 font-mono">({p.role})</span>
+                    </div>
+                    <span className="text-[11px] text-blue-600 font-medium">Login →</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Footer info */}
